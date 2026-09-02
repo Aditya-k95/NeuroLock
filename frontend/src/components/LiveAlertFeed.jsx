@@ -13,7 +13,7 @@ import {
   Smartphone
 } from 'lucide-react';
 
-export default function LiveAlertFeed({ alerts = [], onResolveAlert }) {
+export default function LiveAlertFeed({ alerts = [], onResolveAlert, isLoading = false }) {
   const [filter, setFilter] = useState('ALL');
   const [expandedId, setExpandedId] = useState(null);
 
@@ -73,7 +73,12 @@ export default function LiveAlertFeed({ alerts = [], onResolveAlert }) {
 
       {/* Feed List */}
       <div className="space-y-3.5">
-        {filteredAlerts.length === 0 ? (
+        {isLoading && filteredAlerts.length === 0 ? (
+          <div className="py-12 text-center text-pearl-400 font-mono text-xs border border-dashed border-obsidian-700 rounded-xl">
+            <div className="w-6 h-6 border-2 border-sand-400 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+            <p>Fetching real-time incident telemetry from backend...</p>
+          </div>
+        ) : filteredAlerts.length === 0 ? (
           <div className="py-12 text-center text-pearl-400 font-mono text-xs border border-dashed border-obsidian-700 rounded-xl">
             <ShieldCheck className="w-8 h-8 mx-auto text-sand-400 mb-2 opacity-80" />
             <p>No active anomalies found matching filter criteria.</p>

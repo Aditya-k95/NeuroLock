@@ -2,6 +2,10 @@ import express from 'express';
 import mongoose from 'mongoose';
 import Alert from '../models/Alert.js';
 import User from '../models/User.js';
+import { runDetectionPipeline } from '../detection/detectionPipeline.js';
+import { generateAlertExplanation } from '../llm/alertGenerator.js';
+import { sendWhatsAppAlert } from '../services/whatsappSender.js';
+import { generateScenarioEvent, SCENARIO_GENERATORS } from '../../../demo/trafficSimulator.js';
 
 const router = express.Router();
 
@@ -38,6 +42,78 @@ router.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     database: dbStatusMap[dbState] || 'unknown'
   });
+});
+
+/**
+ * @route   GET /api/metrics
+ * @desc    Get dashboard-level cybersecurity aggregate metrics and health score
+ * @access  Public
+ */
+router.get('/metrics', async (req, res, next) => {
+  try {
+    if (mongoose.connection.readyState !== 1) {
+      // Graceful fallback when MongoDB is offline in standalone development mode
+      return res.status(200).json({
+        success: true,
+        securityScore: 98,
+        totalAlerts: 0,
+        criticalAlerts: 0,
+        highAlerts: 0,
+        mediumAlerts: 0,
+        lowAlerts: 0,
+        activeAlerts: 0,
+        status: 'standalone_mode'
+      });
+    }
+
+    const [totalAlerts, activeAlerts, severityCounts] = await Promise.all([
+      Alert.countDocuments(),
+      Alert.countDocuments({ status: 'ACTIVE' }),
+      Alert.aggregate([
+        {
+          $group: {
+            _id: '$severity',
+            count: { $sum: 1 },
+            activeCount: {
+              $sum: { $cond: [{ $eq: ['$status', 'ACTIVE'] }, 1, 0] }
+            }
+          }
+        }
+      ])
+    ]);
+
+    const severityMap = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
+    const activeSeverityMap = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0 };
+
+    severityCounts.forEach((item) => {
+      if (severityMap[item._id] !== undefined) {
+        severityMap[item._id] = item.count;
+        activeSeverityMap[item._id] = item.activeCount;
+      }
+    });
+
+    // Calculate dynamic security health score (100 baseline minus active penalties)
+    const penalty =
+      activeSeverityMap.CRITICAL * 15 +
+      activeSeverityMap.HIGH * 8 +
+      activeSeverityMap.MEDIUM * 3 +
+      activeSeverityMap.LOW * 1;
+
+    const securityScore = Math.max(10, Math.min(100, 100 - penalty));
+
+    res.status(200).json({
+      success: true,
+      securityScore,
+      totalAlerts,
+      criticalAlerts: severityMap.CRITICAL,
+      highAlerts: severityMap.HIGH,
+      mediumAlerts: severityMap.MEDIUM,
+      lowAlerts: severityMap.LOW,
+      activeAlerts
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 /**
@@ -200,7 +276,7 @@ router.patch('/alerts/:id/status', checkDbConnection, async (req, res, next) => 
 
 /**
  * @route   POST /api/alerts
- * @desc    Create a new security threat alert (useful for seeding, tests, and future pipeline)
+ * @desc    Create a new security threat alert
  * @access  Public
  */
 router.post('/alerts', checkDbConnection, async (req, res, next) => {
@@ -211,7 +287,15 @@ router.post('/alerts', checkDbConnection, async (req, res, next) => {
     // Broadcast new alert event via Socket.io
     const io = req.app.get('io');
     if (io) {
+      io.emit('new-alert', savedAlert);
       io.emit('alert:new', savedAlert);
+    }
+
+    // Automatically dispatch WhatsApp notification for HIGH and CRITICAL alerts
+    if (savedAlert.severity === 'HIGH' || savedAlert.severity === 'CRITICAL') {
+      sendWhatsAppAlert(savedAlert).catch((err) =>
+        console.warn('[WhatsApp Alert Error]', err.message)
+      );
     }
 
     res.status(201).json({
@@ -228,6 +312,175 @@ router.post('/alerts', checkDbConnection, async (req, res, next) => {
     }
     next(error);
   }
+});
+
+/**
+ * Scenario Alias Mapper
+ * Maps UI aliases to canonical scenario keys
+ */
+const mapAttackType = (rawType) => {
+  if (!rawType) return null;
+  const key = String(rawType).trim().toUpperCase();
+
+  const aliasMap = {
+    NORMAL_LOGIN: 'NORMAL_LOGIN',
+    BRUTE_FORCE: 'BRUTE_FORCE',
+    AUTH_BURST_FAILURE: 'BRUTE_FORCE',
+    CREDENTIAL_STUFFING: 'BRUTE_FORCE',
+    SUSPICIOUS_LOGIN: 'SUSPICIOUS_LOGIN',
+    DEVICE_FINGERPRINT: 'SUSPICIOUS_LOGIN',
+    DEVICE_DEVIATION: 'SUSPICIOUS_LOGIN',
+    ACCOUNT_COMPROMISE: 'ACCOUNT_COMPROMISE',
+    IMPOSSIBLE_TRAVEL: 'ACCOUNT_COMPROMISE',
+    GEO_IMPOSSIBLE_TRAVEL: 'ACCOUNT_COMPROMISE',
+    DATA_EXFILTRATION: 'DATA_EXFILTRATION',
+    DATA_EXPORT: 'DATA_EXFILTRATION',
+    RANSOMWARE_LIKE_ACTIVITY: 'RANSOMWARE_LIKE_ACTIVITY',
+    RANSOMWARE: 'RANSOMWARE_LIKE_ACTIVITY'
+  };
+
+  return aliasMap[key] || (SCENARIO_GENERATORS[key] ? key : null);
+};
+
+/**
+ * @route   POST /api/simulate-attack
+ * @desc    Simulate attack scenario, run detection pipeline, persist Alert, and return structured verdict
+ * @access  Public
+ */
+router.post('/simulate-attack', async (req, res, next) => {
+  try {
+    const rawType = req.body.type || req.body.scenario || req.body.id || req.body.attackType;
+    const canonicalType = mapAttackType(rawType);
+
+    if (!canonicalType) {
+      return res.status(400).json({
+        success: false,
+        error: `Invalid attack type '${rawType}'. Supported types: NORMAL_LOGIN, BRUTE_FORCE, SUSPICIOUS_LOGIN, ACCOUNT_COMPROMISE, DATA_EXFILTRATION, RANSOMWARE_LIKE_ACTIVITY`
+      });
+    }
+
+    // 1. Generate synthetic security event
+    const syntheticEvent = generateScenarioEvent(canonicalType, req.body.overrides || {});
+
+    // 2. Execute deterministic detection pipeline
+    const detection = runDetectionPipeline(syntheticEvent);
+
+    // 3. Generate zero-jargon plain-English explanation via LLM layer (with safe fallback)
+    const llmExplanation = await generateAlertExplanation(detection);
+
+    // 4. Create Alert document in MongoDB if connected
+    let alertDoc = null;
+    if (mongoose.connection.readyState === 1) {
+      try {
+        const newAlert = new Alert({
+          alertType: canonicalType,
+          severity: detection.riskResult.severity,
+          riskScore: detection.riskResult.riskScore,
+          anomalyScore: detection.anomalyResult.anomalyScore,
+          ruleScore: detection.ruleResult.ruleScore,
+          title: llmExplanation.title,
+          explanation: llmExplanation.explanation,
+          recommendedAction: llmExplanation.recommendedAction,
+          sourceIp: syntheticEvent.sourceIp || syntheticEvent.ipAddress,
+          destinationIp: syntheticEvent.destinationIp || '',
+          deviceId: syntheticEvent.deviceId || '',
+          username: syntheticEvent.username,
+          eventData: syntheticEvent.eventData || {},
+          status: 'ACTIVE',
+          timestamp: syntheticEvent.timestamp || new Date()
+        });
+
+        alertDoc = await newAlert.save();
+      } catch (dbErr) {
+        console.warn('[Simulator API] Could not persist alert to DB:', dbErr.message);
+      }
+    }
+
+    // 5. Broadcast live events via Socket.io
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('telemetry:stream', syntheticEvent);
+      const alertPayload = alertDoc || {
+        _id: `sim_${Date.now()}`,
+        alertType: canonicalType,
+        severity: detection.riskResult.severity,
+        riskScore: detection.riskResult.riskScore,
+        anomalyScore: detection.anomalyResult.anomalyScore,
+        ruleScore: detection.ruleResult.ruleScore,
+        title: llmExplanation.title,
+        explanation: llmExplanation.explanation,
+        recommendedAction: llmExplanation.recommendedAction,
+        sourceIp: syntheticEvent.sourceIp || syntheticEvent.ipAddress,
+        destinationIp: syntheticEvent.destinationIp || '',
+        deviceId: syntheticEvent.deviceId || '',
+        username: syntheticEvent.username,
+        eventData: syntheticEvent.eventData || {},
+        status: 'ACTIVE',
+        timestamp: syntheticEvent.timestamp || new Date().toISOString()
+      };
+
+      io.emit('new-alert', alertPayload);
+      io.emit('alert:new', alertPayload);
+    }
+
+    // 6. Automatically dispatch WhatsApp notification for HIGH and CRITICAL severity threats
+    let whatsappDelivery = { sent: false, reason: 'Severity below threshold' };
+    if (detection.riskResult.severity === 'HIGH' || detection.riskResult.severity === 'CRITICAL') {
+      whatsappDelivery = await sendWhatsAppAlert(
+        {
+          title: llmExplanation.title,
+          severity: detection.riskResult.severity,
+          riskScore: detection.riskResult.riskScore,
+          explanation: llmExplanation.explanation,
+          recommendedAction: llmExplanation.recommendedAction
+        },
+        {
+          to: req.body.targetPhone || req.body.overrides?.targetPhone
+        }
+      );
+    }
+
+    // 7. Return complete structured response
+    const alertId = alertDoc ? alertDoc._id : `sim_${Date.now()}`;
+
+    res.status(200).json({
+      success: true,
+      alertId,
+      alertType: canonicalType,
+      title: llmExplanation.title,
+      severity: detection.riskResult.severity,
+      riskScore: detection.riskResult.riskScore,
+      anomalyScore: detection.anomalyResult.anomalyScore,
+      ruleScore: detection.ruleResult.ruleScore,
+      explanation: llmExplanation.explanation,
+      recommendedAction: llmExplanation.recommendedAction,
+      whatsapp: whatsappDelivery,
+      timestamp: syntheticEvent.timestamp,
+      event: syntheticEvent,
+      detection
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * @route   GET /api/simulate/scenarios
+ * @desc    Get list of available benchmark cybersecurity attack scenarios
+ * @access  Public
+ */
+router.get('/simulate/scenarios', (req, res) => {
+  res.status(200).json({
+    success: true,
+    scenarios: [
+      { id: 'NORMAL_LOGIN', name: 'Legitimate Employee Morning Login', category: 'BASELINE' },
+      { id: 'BRUTE_FORCE', name: 'Automated Password Guessing Burst', category: 'CREDENTIAL_ATTACK' },
+      { id: 'SUSPICIOUS_LOGIN', name: 'Unrecognized Off-Hours Login Attempt', category: 'ANOMALOUS_ACCESS' },
+      { id: 'ACCOUNT_COMPROMISE', name: 'Impossible Travel & Stolen Session Token', category: 'ACCOUNT_TAKEOVER' },
+      { id: 'DATA_EXFILTRATION', name: 'Bulk Data Exfiltration & Database Dump', category: 'EXFILTRATION' },
+      { id: 'RANSOMWARE_LIKE_ACTIVITY', name: 'Rapid File Encryption & Renaming Wave', category: 'RANSOMWARE' }
+    ]
+  });
 });
 
 export default router;
