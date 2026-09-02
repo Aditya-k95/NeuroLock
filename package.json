@@ -1,0 +1,18 @@
+{
+  "name": "neurolock-workspace",
+  "version": "1.0.0",
+  "description": "NeuroLock - Real-time Login/Traffic Anomaly Detection & Zero-Jargon Threat Communication (Build with भारत 2.0 National Hackathon - Team PARADOX)",
+  "scripts": {
+    "install:all": "npm install && npm --prefix frontend install && npm --prefix backend install",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "dev": "concurrently -n \"BACKEND,FRONTEND\" -c \"cyan,magenta\" \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "build:frontend": "npm --prefix frontend run build",
+    "start": "npm --prefix backend start"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "author": "Team PARADOX",
+  "license": "MIT"
+}
