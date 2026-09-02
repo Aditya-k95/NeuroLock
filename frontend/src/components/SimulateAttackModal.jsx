@@ -1,9 +1,15 @@
 import React, { useState } from 'react';
-import { X, Zap, ShieldAlert, Globe, Flame, Terminal, CheckCircle2 } from 'lucide-react';
+import { X, Zap, ShieldAlert, Globe, Flame, Terminal, CheckCircle2, Smartphone } from 'lucide-react';
 
-export default function SimulateAttackModal({ isOpen, onClose, onTriggerAttack }) {
+export default function SimulateAttackModal({
+  isOpen,
+  onClose,
+  onTriggerAttack,
+  whatsAppNumber = '+91 98765 43210'
+}) {
   const [selectedScenario, setSelectedScenario] = useState('BRUTE_FORCE');
   const [isSimulating, setIsSimulating] = useState(false);
+  const [dispatchToWhatsApp, setDispatchToWhatsApp] = useState(true);
   const [successMessage, setSuccessMessage] = useState('');
 
   if (!isOpen) return null;
@@ -64,13 +70,17 @@ export default function SimulateAttackModal({ isOpen, onClose, onTriggerAttack }
     const scenario = scenarios.find(s => s.id === selectedScenario);
     
     setTimeout(() => {
-      onTriggerAttack(scenario);
+      onTriggerAttack(scenario, dispatchToWhatsApp);
       setIsSimulating(false);
-      setSuccessMessage(`Triggered "${scenario.title}" vector! Injected to Threat Engine.`);
+      setSuccessMessage(
+        dispatchToWhatsApp
+          ? `Injected "${scenario.title}" and dispatched WhatsApp alert to ${whatsAppNumber}!`
+          : `Injected "${scenario.title}" vector to Threat Engine!`
+      );
       setTimeout(() => {
         setSuccessMessage('');
         onClose();
-      }, 1200);
+      }, 1300);
     }, 800);
   };
 
@@ -89,7 +99,7 @@ export default function SimulateAttackModal({ isOpen, onClose, onTriggerAttack }
                 ATTACK VECTOR SIMULATOR (JUDGE DEMO)
               </h3>
               <p className="text-xs font-mono text-pearl-400">
-                Trigger synthetic anomaly telemetry to test real-time LLM synthesis
+                Trigger synthetic anomaly telemetry to test real-time LLM synthesis & WhatsApp dispatch
               </p>
             </div>
           </div>
@@ -140,10 +150,29 @@ export default function SimulateAttackModal({ isOpen, onClose, onTriggerAttack }
             })}
           </div>
 
+          {/* WhatsApp Auto-Dispatch Option */}
+          <div className="flex items-center justify-between p-3 rounded-xl bg-obsidian-950 border border-obsidian-750">
+            <label className="flex items-center gap-2.5 cursor-pointer text-xs font-mono text-pearl-200 select-none">
+              <input
+                type="checkbox"
+                checked={dispatchToWhatsApp}
+                onChange={(e) => setDispatchToWhatsApp(e.target.checked)}
+                className="w-4 h-4 rounded bg-obsidian-900 border-obsidian-700 text-sand-400 focus:ring-0 focus:outline-none cursor-pointer"
+              />
+              <span className="flex items-center gap-1.5">
+                <Smartphone className="w-3.5 h-3.5 text-sand-400" />
+                <span>Simultaneously transmit zero-jargon alert to WhatsApp</span>
+              </span>
+            </label>
+            <span className="text-[11px] font-mono text-sand-300 bg-obsidian-900 px-2 py-0.5 rounded border border-obsidian-700">
+              {whatsAppNumber}
+            </span>
+          </div>
+
           {/* Success Banner */}
           {successMessage && (
-            <div className="flex items-center gap-2 p-3 rounded-lg bg-sand-500/15 border border-sand-500/40 text-sand-300 text-xs font-mono">
-              <CheckCircle2 className="w-4 h-4" />
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-sand-500/15 border border-sand-500/40 text-sand-300 text-xs font-mono animate-fadeIn">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
               <span>{successMessage}</span>
             </div>
           )}

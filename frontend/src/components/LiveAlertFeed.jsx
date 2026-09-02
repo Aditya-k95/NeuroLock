@@ -9,7 +9,8 @@ import {
   ChevronDown,
   ChevronUp,
   Terminal,
-  Clock
+  Clock,
+  Smartphone
 } from 'lucide-react';
 
 export default function LiveAlertFeed({ alerts = [], onResolveAlert }) {
@@ -48,7 +49,7 @@ export default function LiveAlertFeed({ alerts = [], onResolveAlert }) {
             </h2>
           </div>
           <p className="text-xs text-pearl-400 font-mono mt-0.5">
-            Real-time plain-English incident narratives with 1-click mitigation controls
+            Real-time plain-English incident narratives with 1-click mitigation controls & WhatsApp dispatches
           </p>
         </div>
 
@@ -96,7 +97,7 @@ export default function LiveAlertFeed({ alerts = [], onResolveAlert }) {
               >
                 {/* Top Row: Badges, Target User, Timestamp */}
                 <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
-                  <div className="flex items-center gap-2.5">
+                  <div className="flex flex-wrap items-center gap-2">
                     {getRiskBadge(alert.riskLevel)}
                     <span className="text-xs font-mono font-semibold text-pearl-100 bg-obsidian-800 px-2 py-0.5 rounded border border-obsidian-700">
                       {alert.userEmail}
@@ -104,6 +105,12 @@ export default function LiveAlertFeed({ alerts = [], onResolveAlert }) {
                     <span className="text-[11px] font-mono text-pearl-400 hidden sm:inline">
                       ID: {alert.id}
                     </span>
+                    {alert.dispatchedToWhatsApp && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/70 text-emerald-400 border border-emerald-700/50">
+                        <Smartphone className="w-3 h-3" />
+                        <span>WHATSAPP DISPATCHED</span>
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-1.5 text-xs font-mono text-pearl-400">

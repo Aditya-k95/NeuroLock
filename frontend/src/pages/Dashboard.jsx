@@ -1,13 +1,24 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Navbar from '../components/Navbar';
 import MetricsGrid from '../components/MetricsGrid';
 import TrafficChart from '../components/TrafficChart';
 import LiveAlertFeed from '../components/LiveAlertFeed';
 import SimulateAttackModal from '../components/SimulateAttackModal';
-import { Sparkles, Smartphone } from 'lucide-react';
+import WhatsAppPipelineModal from '../components/WhatsAppPipelineModal';
+import { Sparkles, Smartphone, CheckCircle2, MessageSquare, ExternalLink, X } from 'lucide-react';
 
 export default function Dashboard() {
   const [isSimulatorOpen, setIsSimulatorOpen] = useState(false);
+  const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
+  
+  // Persistent or default target phone number
+  const [whatsAppNumber, setWhatsAppNumber] = useState(() => {
+    return localStorage.getItem('neurolock_whatsapp_number') || '+91 98765 43210';
+  });
+
+  // Floating Toast Notifications
+  const [toastNotification, setToastNotification] = useState(null);
+
   const [totalEvents, setTotalEvents] = useState(18492);
   const [anomaliesFlagged, setAnomaliesFlagged] = useState(3);
   const [threatLevel, setThreatLevel] = useState('HIGH');
@@ -23,6 +34,7 @@ export default function Dashboard() {
       recommendedAction: 'Lock account and invalidate active sessions',
       timeAgo: '1 min ago',
       isResolved: false,
+      dispatchedToWhatsApp: true,
       rawTelemetry: {
         timestamp: '2026-09-02T12:51:22.000Z',
         anomaly: 'AUTH_BURST_ATTACK',
@@ -41,6 +53,7 @@ export default function Dashboard() {
       recommendedAction: 'Trigger multi-factor re-authentication',
       timeAgo: '6 mins ago',
       isResolved: false,
+      dispatchedToWhatsApp: true,
       rawTelemetry: {
         timestamp: '2026-09-02T12:46:10.000Z',
         anomaly: 'IMPOSSIBLE_TRAVEL_VELOCITY',
@@ -59,6 +72,7 @@ export default function Dashboard() {
       recommendedAction: 'Verify if scheduled CI/CD pipeline bot',
       timeAgo: '24 mins ago',
       isResolved: true,
+      dispatchedToWhatsApp: false,
       rawTelemetry: {
         timestamp: '2026-09-02T12:28:44.000Z',
         anomaly: 'UNRECOGNIZED_USER_AGENT',
@@ -68,8 +82,26 @@ export default function Dashboard() {
     }
   ]);
 
+  const handleSavePhoneNumber = (newNumber) => {
+    setWhatsAppNumber(newNumber);
+    localStorage.setItem('neurolock_whatsapp_number', newNumber);
+  };
+
+  const showToast = (title, message, isWhatsApp = true) => {
+    setToastNotification({
+      title,
+      message,
+      isWhatsApp,
+      timestamp: new Date().toLocaleTimeString()
+    });
+
+    setTimeout(() => {
+      setToastNotification(null);
+    }, 6000);
+  };
+
   // Handle attack injection from the Simulator
-  const handleTriggerAttack = (scenario) => {
+  const handleTriggerAttack = (scenario, dispatchToWA = true) => {
     setTotalEvents(prev => prev + (scenario.rawPayload.attempts || 12));
     setAnomaliesFlagged(prev => prev + 1);
     setThreatLevel('CRITICAL');
@@ -101,10 +133,19 @@ export default function Dashboard() {
       recommendedAction: recAction,
       timeAgo: 'Just now',
       isResolved: false,
+      dispatchedToWhatsApp: dispatchToWA,
       rawTelemetry: scenario.rawPayload
     };
 
     setAlerts(prev => [newAlert, ...prev]);
+
+    if (dispatchToWA) {
+      showToast(
+        'WhatsApp Zero-Jargon Alert Dispatched',
+        `Transmitted plain-English security summary to ${whatsAppNumber}`,
+        true
+      );
+    }
   };
 
   const handleResolveAlert = (alertId, actionType) => {
@@ -113,20 +154,65 @@ export default function Dashboard() {
         item.id === alertId ? { ...item, isResolved: true } : item
       )
     );
+    showToast(
+      'Account Remediated',
+      `Applied mitigation policy (${actionType}) and updated telemetry state.`,
+      false
+    );
+  };
+
+  const handleManualDispatchFromModal = ({ phoneNumber, threat }) => {
+    showToast(
+      'WhatsApp Test Alert Sent',
+      `Delivered zero-jargon incident breakdown for "${threat.title}" to ${phoneNumber}`,
+      true
+    );
   };
 
   return (
-    <div className="min-h-screen bg-obsidian-950 text-pearl-100 flex flex-col selection:bg-crimson-600 selection:text-pearl-50">
+    <div className="min-h-screen bg-obsidian-950 text-pearl-100 flex flex-col selection:bg-crimson-600 selection:text-pearl-50 relative">
       
       {/* Top Navigation Bar */}
       <Navbar onOpenSimulator={() => setIsSimulatorOpen(true)} isLive={true} />
+
+      {/* Floating Alert Toast Notification */}
+      {toastNotification && (
+        <div className="fixed bottom-6 right-6 z-50 max-w-md w-full bg-obsidian-900 border border-sand-500/60 shadow-2xl rounded-2xl p-4 animate-bounce-short">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="p-2 rounded-xl bg-sand-500/20 text-sand-300 border border-sand-500/40 shrink-0">
+                {toastNotification.isWhatsApp ? <Smartphone className="w-5 h-5" /> : <CheckCircle2 className="w-5 h-5 text-emerald-400" />}
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-xs font-mono font-bold text-pearl-100 uppercase tracking-wide">
+                    {toastNotification.title}
+                  </h4>
+                  <span className="text-[10px] font-mono text-pearl-400">
+                    {toastNotification.timestamp}
+                  </span>
+                </div>
+                <p className="text-xs text-pearl-200 mt-1 font-mono leading-relaxed">
+                  {toastNotification.message}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setToastNotification(null)}
+              className="text-pearl-400 hover:text-pearl-100 p-1"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-8 py-6 space-y-6">
         
         {/* Hackathon Presentation Header Banner */}
         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-obsidian-900 via-obsidian-850 to-obsidian-950 border border-obsidian-700/80 p-6 sm:p-7 shadow-obsidian-card">
-          <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5">
             <div>
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-crimson-900/40 text-sand-300 border border-crimson-700/50 text-xs font-mono font-bold mb-3">
                 <Sparkles className="w-3.5 h-3.5 text-sand-400" />
@@ -136,18 +222,33 @@ export default function Dashboard() {
                 Real-Time Security Threat & Anomaly Radar
               </h2>
               <p className="text-sm text-pearl-300 mt-1 max-w-2xl">
-                Ingesting raw authentication streams, flagging behavioral anomalies, and delivering zero-jargon plain-English explanations directly to non-technical stakeholders.
+                Ingesting raw authentication streams, flagging behavioral anomalies, and delivering zero-jargon plain-English explanations directly to non-technical stakeholders via WhatsApp.
               </p>
             </div>
 
-            {/* Quick WhatsApp Link Pill */}
-            <div className="flex items-center gap-3 p-3 rounded-xl bg-obsidian-950 border border-obsidian-700">
-              <div className="p-2 rounded-lg bg-sand-500/15 text-sand-400 border border-sand-500/30">
-                <Smartphone className="w-4 h-4" />
+            {/* Interactive WhatsApp Link Pill & Number Configuration Card */}
+            <div
+              onClick={() => setIsWhatsAppModalOpen(true)}
+              className="group cursor-pointer flex items-center gap-3.5 p-3.5 rounded-2xl bg-obsidian-950/90 border border-obsidian-700 hover:border-sand-500/70 shadow-md hover:shadow-sand-glow-sm transition-all duration-200 shrink-0 w-full lg:w-auto"
+            >
+              <div className="relative p-2.5 rounded-xl bg-sand-500/15 text-sand-400 border border-sand-500/30 group-hover:scale-105 transition-transform">
+                <Smartphone className="w-5 h-5" />
+                <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                </span>
               </div>
-              <div>
-                <span className="text-[11px] font-mono text-pearl-400 block">WhatsApp Pipeline:</span>
-                <span className="text-xs font-mono font-bold text-sand-300">CONNECTED (+91-98XXX)</span>
+              <div className="flex-1">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-[11px] font-mono text-pearl-400 block">WhatsApp Pipeline:</span>
+                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-sand-900/40 text-sand-300 border border-sand-700/40 group-hover:bg-sand-500 group-hover:text-obsidian-950 transition-colors">
+                    TEST / CHANGE ↗
+                  </span>
+                </div>
+                <div className="text-xs font-mono font-bold text-sand-300 flex items-center gap-1.5 mt-0.5">
+                  <span className="text-emerald-400">CONNECTED</span>
+                  <span className="text-pearl-200">({whatsAppNumber})</span>
+                </div>
               </div>
             </div>
           </div>
@@ -185,6 +286,8 @@ export default function Dashboard() {
             <span>Node.js / Express</span>
             <span>•</span>
             <span>LLM Intelligence</span>
+            <span>•</span>
+            <span>WhatsApp Dispatch API</span>
           </div>
         </div>
       </footer>
@@ -194,6 +297,16 @@ export default function Dashboard() {
         isOpen={isSimulatorOpen}
         onClose={() => setIsSimulatorOpen(false)}
         onTriggerAttack={handleTriggerAttack}
+        whatsAppNumber={whatsAppNumber}
+      />
+
+      {/* WhatsApp Pipeline Tester & Phone Number Setup Modal */}
+      <WhatsAppPipelineModal
+        isOpen={isWhatsAppModalOpen}
+        onClose={() => setIsWhatsAppModalOpen(false)}
+        phoneNumber={whatsAppNumber}
+        onSavePhoneNumber={handleSavePhoneNumber}
+        onDispatchAlert={handleManualDispatchFromModal}
       />
 
     </div>
