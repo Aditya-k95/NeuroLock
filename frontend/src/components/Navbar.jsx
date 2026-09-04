@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Wifi, Radio, Zap, Clock, Terminal } from 'lucide-react';
+import { Activity, Wifi, Radio, Zap, Clock, Terminal, UserCheck, Shield } from 'lucide-react';
 import CyberLogo from './CyberLogo';
+import RoleGuard, { useUser } from './RoleGuard';
 
 export default function Navbar({ onOpenSimulator, isLive = true }) {
   const [time, setTime] = useState(new Date().toLocaleTimeString());
   const [latency, setLatency] = useState(24);
+  const { role, toggleRole, user } = useUser();
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -73,17 +75,35 @@ export default function Navbar({ onOpenSimulator, isLive = true }) {
           </div>
         </div>
 
-        {/* Right Actions: Attack Simulator Trigger */}
+        {/* Right Actions: Role Switcher & Attack Simulator Trigger */}
         <div className="flex items-center gap-3">
+          {/* Interactive Role Switcher Toggle */}
           <button
-            id="simulate-attack-btn"
-            onClick={onOpenSimulator}
-            className="flex items-center gap-2 px-3.5 py-2 text-xs font-mono font-semibold rounded-lg bg-crimson-900/60 text-sand-300 border border-crimson-600/60 hover:bg-crimson-700 hover:text-pearl-50 hover:shadow-crimson-glow transition-all duration-200"
+            id="role-toggle-btn"
+            onClick={toggleRole}
+            title="Click to toggle between Owner (full access) and Staff (assigned alerts only) views"
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-mono rounded-lg border transition-all ${
+              role === 'owner'
+                ? 'bg-sand-500/15 text-sand-300 border-sand-500/40 hover:bg-sand-500/25 shadow-sm'
+                : 'bg-cyan-950/50 text-cyan-300 border-cyan-600/50 hover:bg-cyan-900/40 shadow-sm'
+            }`}
           >
-            <Zap className="w-3.5 h-3.5 text-sand-400" />
-            <span className="hidden sm:inline">SIMULATE ATTACK</span>
-            <span className="sm:hidden">SIMULATE</span>
+            <UserCheck className="w-3.5 h-3.5" />
+            <span className="font-bold uppercase tracking-wider">{role === 'owner' ? '👑 OWNER' : '👤 STAFF'}</span>
           </button>
+
+          {/* Attack Simulator Trigger (Protected: Owner Only) */}
+          <RoleGuard allowedRoles={['owner']}>
+            <button
+              id="simulate-attack-btn"
+              onClick={onOpenSimulator}
+              className="flex items-center gap-2 px-3.5 py-2 text-xs font-mono font-semibold rounded-lg bg-crimson-900/60 text-sand-300 border border-crimson-600/60 hover:bg-crimson-700 hover:text-pearl-50 hover:shadow-crimson-glow transition-all duration-200"
+            >
+              <Zap className="w-3.5 h-3.5 text-sand-400" />
+              <span className="hidden sm:inline">SIMULATE ATTACK</span>
+              <span className="sm:hidden">SIMULATE</span>
+            </button>
+          </RoleGuard>
         </div>
 
       </div>

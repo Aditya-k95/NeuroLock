@@ -6,9 +6,11 @@ import TrafficChart from '../components/TrafficChart';
 import LiveAlertFeed from '../components/LiveAlertFeed';
 import SimulateAttackModal from '../components/SimulateAttackModal';
 import WhatsAppPipelineModal from '../components/WhatsAppPipelineModal';
-import { Sparkles, Smartphone, CheckCircle2, MessageSquare, ExternalLink, X } from 'lucide-react';
+import RoleGuard, { useUser } from '../components/RoleGuard';
+import { Sparkles, Smartphone, CheckCircle2, MessageSquare, ExternalLink, X, Shield, Lock } from 'lucide-react';
 
 export default function Dashboard() {
+  const { user, role, toggleRole } = useUser();
   const [isSimulatorOpen, setIsSimulatorOpen] = useState(false);
   const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
   
@@ -225,33 +227,60 @@ export default function Dashboard() {
               <p className="text-sm text-pearl-300 mt-1 max-w-2xl">
                 Ingesting raw authentication streams, flagging behavioral anomalies, and delivering zero-jargon plain-English explanations directly to non-technical stakeholders via WhatsApp.
               </p>
-            </div>
 
-            {/* Interactive WhatsApp Link Pill & Number Configuration Card */}
-            <div
-              onClick={() => setIsWhatsAppModalOpen(true)}
-              className="group cursor-pointer flex items-center gap-3.5 p-3.5 rounded-2xl bg-obsidian-950/90 border border-obsidian-700 hover:border-sand-500/70 shadow-md hover:shadow-sand-glow-sm transition-all duration-200 shrink-0 w-full lg:w-auto"
-            >
-              <div className="relative p-2.5 rounded-xl bg-sand-500/15 text-sand-400 border border-sand-500/30 group-hover:scale-105 transition-transform">
-                <Smartphone className="w-5 h-5" />
-                <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-                </span>
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-[11px] font-mono text-pearl-400 block">WhatsApp Pipeline:</span>
-                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-sand-900/40 text-sand-300 border border-sand-700/40 group-hover:bg-sand-500 group-hover:text-obsidian-950 transition-colors">
-                    TEST / CHANGE ↗
+              {role === 'staff' && (
+                <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-cyan-950/70 border border-cyan-700/60 text-xs font-mono text-cyan-300">
+                  <Shield className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>
+                    Staff View Active: Showing alerts assigned to <strong>{user?.name}</strong> ({user?.email})
                   </span>
                 </div>
-                <div className="text-xs font-mono font-bold text-sand-300 flex items-center gap-1.5 mt-0.5">
-                  <span className="text-emerald-400">CONNECTED</span>
-                  <span className="text-pearl-200">({whatsAppNumber})</span>
+              )}
+            </div>
+
+            {/* Interactive WhatsApp Link Pill & Number Configuration Card (Owner Privileged) */}
+            <RoleGuard
+              allowedRoles={['owner']}
+              fallback={
+                <div className="flex items-center gap-3.5 p-3.5 rounded-2xl bg-obsidian-950/70 border border-obsidian-800 shrink-0 w-full lg:w-auto">
+                  <div className="p-2.5 rounded-xl bg-obsidian-900 text-pearl-400 border border-obsidian-800">
+                    <Smartphone className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <span className="text-[11px] font-mono text-pearl-400 block">WhatsApp Pipeline:</span>
+                    <div className="text-xs font-mono font-bold text-emerald-400 flex items-center gap-1.5 mt-0.5">
+                      <span>CONNECTED</span>
+                      <span className="text-pearl-400">({whatsAppNumber})</span>
+                    </div>
+                  </div>
+                </div>
+              }
+            >
+              <div
+                onClick={() => setIsWhatsAppModalOpen(true)}
+                className="group cursor-pointer flex items-center gap-3.5 p-3.5 rounded-2xl bg-obsidian-950/90 border border-obsidian-700 hover:border-sand-500/70 shadow-md hover:shadow-sand-glow-sm transition-all duration-200 shrink-0 w-full lg:w-auto"
+              >
+                <div className="relative p-2.5 rounded-xl bg-sand-500/15 text-sand-400 border border-sand-500/30 group-hover:scale-105 transition-transform">
+                  <Smartphone className="w-5 h-5" />
+                  <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                  </span>
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-[11px] font-mono text-pearl-400 block">WhatsApp Pipeline:</span>
+                    <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-sand-900/40 text-sand-300 border border-sand-700/40 group-hover:bg-sand-500 group-hover:text-obsidian-950 transition-colors">
+                      TEST / CHANGE ↗
+                    </span>
+                  </div>
+                  <div className="text-xs font-mono font-bold text-sand-300 flex items-center gap-1.5 mt-0.5">
+                    <span className="text-emerald-400">CONNECTED</span>
+                    <span className="text-pearl-200">({whatsAppNumber})</span>
+                  </div>
                 </div>
               </div>
-            </div>
+            </RoleGuard>
           </div>
         </div>
 
@@ -272,7 +301,7 @@ export default function Dashboard() {
 
         {/* 3. Live Zero-Jargon Plain-English Incident Feed */}
         <LiveAlertFeed
-          alerts={alerts}
+          alerts={role === 'staff' ? alerts.filter(a => a.userEmail === user?.email || a.id === 'ALT-9041') : alerts}
           onResolveAlert={handleResolveAlert}
         />
 
@@ -296,13 +325,15 @@ export default function Dashboard() {
         </div>
       </footer>
 
-      {/* Attack Simulator Modal */}
-      <SimulateAttackModal
-        isOpen={isSimulatorOpen}
-        onClose={() => setIsSimulatorOpen(false)}
-        onTriggerAttack={handleTriggerAttack}
-        whatsAppNumber={whatsAppNumber}
-      />
+      {/* Attack Simulator Modal (Protected: Owner Only) */}
+      <RoleGuard allowedRoles={['owner']}>
+        <SimulateAttackModal
+          isOpen={isSimulatorOpen}
+          onClose={() => setIsSimulatorOpen(false)}
+          onTriggerAttack={handleTriggerAttack}
+          whatsAppNumber={whatsAppNumber}
+        />
+      </RoleGuard>
 
       {/* WhatsApp Pipeline Tester & Phone Number Setup Modal */}
       <WhatsAppPipelineModal
