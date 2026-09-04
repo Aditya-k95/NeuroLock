@@ -2,23 +2,37 @@
  * NeuroLock Deterministic Security Rule Engine
  *
  * Core Heuristic Threat Analysis Module.
- * Evaluates normalized security events against deterministic threshold rules
- * without requiring ML models or LLMs.
+ * Evaluates normalized security events across modular rule detectors:
+ * - Brute-Force & Credential Spraying (`bruteForceDetector.js`)
+ * - Data Exfiltration & Outbound Spikes (`exfilDetector.js`)
+ * - Mass File Access & Sensitive File Traversal (`fileAccessDetector.js`)
+ * - Off-Hours & Identity / Device Anomaly Checks
  */
+
+import {
+  checkBruteForce,
+  checkPasswordSpray,
+  DEFAULT_BRUTE_FORCE_CONFIG
+} from './bruteForceDetector.js';
+
+import {
+  checkDataExfiltration,
+  checkTrafficSpike,
+  DEFAULT_EXFIL_CONFIG
+} from './exfilDetector.js';
+
+import {
+  checkUnusualFileAccess,
+  checkSensitiveFileAccess,
+  DEFAULT_FILE_ACCESS_CONFIG
+} from './fileAccessDetector.js';
 
 /**
  * Default Configurable Rule Thresholds and Weights
- * Centralized configuration to eliminate hard-coded magic numbers.
  */
 export const DEFAULT_RULE_CONFIG = {
   // 1. Brute-Force Login Thresholds
-  bruteForce: {
-    maxAllowedFailedAttempts: 4, // 5 or more failed attempts triggers the rule
-    timeWindowSeconds: 60, // Evaluation window in seconds
-    baseScore: 40, // Base risk score contribution
-    criticalAttemptsThreshold: 10, // Escalates risk score if 10+ failed attempts occur
-    criticalScore: 60
-  },
+  bruteForce: DEFAULT_BRUTE_FORCE_CONFIG,
 
   // 2. Suspicious Login Time Thresholds (24-hour clock)
   suspiciousTime: {
@@ -38,14 +52,12 @@ export const DEFAULT_RULE_CONFIG = {
   },
 
   // 5. Abnormal Data Transfer (Exfiltration / Spikes)
-  abnormalDataTransfer: {
-    warningThresholdBytes: 100 * 1024 * 1024, // 100 MB
-    criticalThresholdBytes: 500 * 1024 * 1024, // 500 MB
-    warningScore: 30,
-    criticalScore: 50
-  },
+  abnormalDataTransfer: DEFAULT_EXFIL_CONFIG,
 
-  // 6. Compound Correlation / Multiple Indicators
+  // 6. File Access Anomalies
+  fileAccess: DEFAULT_FILE_ACCESS_CONFIG,
+
+  // 7. Compound Correlation / Multiple Indicators
   compoundCorrelation: {
     thresholdCount: 2, // Compounding bonus applies if >= 2 distinct rules fire
     escalationBonusPerRule: 15, // Compounding penalty per extra triggered rule
@@ -57,35 +69,7 @@ export const DEFAULT_RULE_CONFIG = {
 };
 
 /**
- * Rule 1: Brute-Force Login Detection
- * Why this rule exists:
- * Automated credential-stuffing and dictionary attacks produce rapid bursts of
- * failed login attempts. Legitimate users rarely fail >= 5 times within 60 seconds.
- */
-export const checkBruteForce = (event, config = DEFAULT_RULE_CONFIG.bruteForce) => {
-  const attempts = event.failedAttempts || event.eventData?.attempts || 0;
-  const windowSec = event.timeWindowSeconds || event.eventData?.timeWindowSeconds || config.timeWindowSeconds;
-
-  if (attempts > config.maxAllowedFailedAttempts && windowSec <= config.timeWindowSeconds) {
-    const isCritical = attempts >= config.criticalAttemptsThreshold;
-    const score = isCritical ? config.criticalScore : config.baseScore;
-
-    return {
-      triggered: true,
-      ruleId: 'BRUTE_FORCE_ATTACK',
-      score,
-      reason: `Detected ${attempts} failed login attempts within ${windowSec} seconds (threshold: ${config.maxAllowedFailedAttempts + 1} attempts).`
-    };
-  }
-
-  return { triggered: false, score: 0 };
-};
-
-/**
  * Rule 2: Suspicious Login Time Detection
- * Why this rule exists:
- * MSME employees and business stakeholders typically authenticate during active business hours.
- * Off-hour logins (e.g. 2:00 AM - 5:00 AM) indicate higher risk of automated intrusion or compromised credentials.
  */
 export const checkSuspiciousTime = (event, config = DEFAULT_RULE_CONFIG.suspiciousTime) => {
   let eventHour;
@@ -97,7 +81,6 @@ export const checkSuspiciousTime = (event, config = DEFAULT_RULE_CONFIG.suspicio
   } else if (event.timestamp) {
     const dateObj = new Date(event.timestamp);
     if (!isNaN(dateObj.getTime())) {
-      // Use UTC hours by default to ensure deterministic behavior across timezones, with optional timezoneOffsetHours support
       const offset = typeof event.timezoneOffsetHours === 'number' ? event.timezoneOffsetHours : 0;
       eventHour = (dateObj.getUTCHours() + offset + 24) % 24;
     }
@@ -107,7 +90,6 @@ export const checkSuspiciousTime = (event, config = DEFAULT_RULE_CONFIG.suspicio
     const startHour = event.userBaseline?.usualHours?.start ?? config.usualStartHour;
     const endHour = event.userBaseline?.usualHours?.end ?? config.usualEndHour;
 
-    // Checks if login hour is outside allowed daytime/business window
     if (eventHour < startHour || eventHour >= endHour) {
       const formattedHour = `${String(eventHour).padStart(2, '0')}:00`;
       return {
@@ -124,9 +106,6 @@ export const checkSuspiciousTime = (event, config = DEFAULT_RULE_CONFIG.suspicio
 
 /**
  * Rule 3: Unrecognized IP Address Detection
- * Why this rule exists:
- * Attackers usually connect through external proxy networks, VPNs, or foreign ASN subnets
- * that deviate from the user's established IP baseline.
  */
 export const checkUnrecognizedIp = (event, config = DEFAULT_RULE_CONFIG.unrecognizedIp) => {
   const ipAddress = event.ipAddress || event.sourceIp || event.eventData?.ipAddress;
@@ -148,9 +127,6 @@ export const checkUnrecognizedIp = (event, config = DEFAULT_RULE_CONFIG.unrecogn
 
 /**
  * Rule 4: Unrecognized Device Detection
- * Why this rule exists:
- * Browser, OS, and client device fingerprints remain consistent for genuine users.
- * An unfamiliar device fingerprint points to potential session hijacking or stolen tokens.
  */
 export const checkUnrecognizedDevice = (event, config = DEFAULT_RULE_CONFIG.unrecognizedDevice) => {
   const deviceId = event.deviceId || event.eventData?.deviceId;
@@ -171,40 +147,13 @@ export const checkUnrecognizedDevice = (event, config = DEFAULT_RULE_CONFIG.unre
 };
 
 /**
- * Rule 5: Abnormal Data Transfer Volume Detection
- * Why this rule exists:
- * Unauthorized data exfiltration or massive database dumps generate anomalous outbound
- * byte volume that far exceeds regular API transactional usage.
+ * Alias for backward compatibility with exfilDetector
  */
-export const checkAbnormalDataTransfer = (event, config = DEFAULT_RULE_CONFIG.abnormalDataTransfer) => {
-  const bytes = event.outboundBytes ?? event.bytesTransferred ?? event.eventData?.outboundBytes ?? 0;
-
-  if (bytes >= config.criticalThresholdBytes) {
-    const mb = (bytes / (1024 * 1024)).toFixed(1);
-    return {
-      triggered: true,
-      ruleId: 'ABNORMAL_DATA_TRANSFER',
-      score: config.criticalScore,
-      reason: `Critical data transfer volume detected: ${mb} MB outbound (threshold: ${(config.criticalThresholdBytes / (1024 * 1024)).toFixed(0)} MB).`
-    };
-  }
-
-  if (bytes >= config.warningThresholdBytes) {
-    const mb = (bytes / (1024 * 1024)).toFixed(1);
-    return {
-      triggered: true,
-      ruleId: 'ABNORMAL_DATA_TRANSFER',
-      score: config.warningScore,
-      reason: `Elevated data transfer volume detected: ${mb} MB outbound (threshold: ${(config.warningThresholdBytes / (1024 * 1024)).toFixed(0)} MB).`
-    };
-  }
-
-  return { triggered: false, score: 0 };
-};
+export const checkAbnormalDataTransfer = checkDataExfiltration;
 
 /**
  * Main Evaluation Engine
- * Analyzes a normalized security event across all deterministic rules.
+ * Analyzes a normalized security event across all deterministic modular rules.
  *
  * @param {Object} event - Normalized security event payload
  * @param {Object} [customConfig] - Optional override of default rule configurations
@@ -217,21 +166,27 @@ export const evaluateRules = (event = {}, customConfig = {}) => {
   const reasons = [];
   let baseScoreSum = 0;
 
-  // 1. Evaluate individual heuristic rules
+  // 1. Evaluate modular heuristic rules across telemetry dimensions
   const ruleCheckers = [
     () => checkBruteForce(event, config.bruteForce),
+    () => checkPasswordSpray(event, config.bruteForce),
     () => checkSuspiciousTime(event, config.suspiciousTime),
     () => checkUnrecognizedIp(event, config.unrecognizedIp),
     () => checkUnrecognizedDevice(event, config.unrecognizedDevice),
-    () => checkAbnormalDataTransfer(event, config.abnormalDataTransfer)
+    () => checkDataExfiltration(event, config.abnormalDataTransfer),
+    () => checkTrafficSpike(event, config.abnormalDataTransfer),
+    () => checkUnusualFileAccess(event, config.fileAccess),
+    () => checkSensitiveFileAccess(event, config.fileAccess)
   ];
 
   for (const checker of ruleCheckers) {
     const result = checker();
     if (result.triggered) {
-      triggeredRules.push(result.ruleId);
-      reasons.push(result.reason);
-      baseScoreSum += result.score;
+      if (!triggeredRules.includes(result.ruleId)) {
+        triggeredRules.push(result.ruleId);
+        reasons.push(result.reason);
+        baseScoreSum += result.score;
+      }
     }
   }
 
@@ -271,8 +226,13 @@ export default {
   DEFAULT_RULE_CONFIG,
   evaluateRules,
   checkBruteForce,
+  checkPasswordSpray,
   checkSuspiciousTime,
   checkUnrecognizedIp,
   checkUnrecognizedDevice,
-  checkAbnormalDataTransfer
+  checkAbnormalDataTransfer,
+  checkDataExfiltration,
+  checkTrafficSpike,
+  checkUnusualFileAccess,
+  checkSensitiveFileAccess
 };

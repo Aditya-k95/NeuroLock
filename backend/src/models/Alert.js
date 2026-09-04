@@ -81,6 +81,30 @@ const alertSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       default: {}
     },
+    eventType: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      default: 'SECURITY_ALERT'
+    },
+    threatVectors: {
+      type: [String],
+      default: []
+    },
+    telemetryMetrics: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {}
+    },
+    detectionFactors: {
+      type: [String],
+      default: []
+    },
+    confidence: {
+      type: Number,
+      min: 0,
+      max: 1.0,
+      default: 1.0
+    },
     status: {
       type: String,
       required: true,

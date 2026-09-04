@@ -1,33 +1,43 @@
 /**
- * NeuroLock Prototype Anomaly Scoring Engine
+ * NeuroLock Multi-Signal Anomaly Scoring Engine
  *
- * NOTE FOR ARCHITECTURAL TRANSPARENCY:
- * This module is a deterministic mathematical anomaly-scoring layer for the hackathon prototype.
- * It simulates the scoring behavior, normalization, and feature weighting of an ML anomaly model
- * (e.g., Isolation Forest, One-Class SVM, or Autoencoder) without external Python/FastAPI dependencies.
+ * Deterministic mathematical multi-vector anomaly-scoring engine.
+ * Evaluates generic telemetry events across multiple orthogonal threat vectors:
+ * 1. Authentication & Burst Velocity (Failed logins, brute force, spray)
+ * 2. Network & Outbound Traffic (Data exfiltration, bandwidth spikes)
+ * 3. File System & Resource Activity (Mass file access, sensitive credential scraping)
+ * 4. User Behavioral Baseline (Empirical active hours, /24 subnet recognition, device trust)
+ * 5. Execution Environment (Unusual background processes, headless scripts, rate spikes)
  *
- * DROP-IN ML REPLACEMENT:
- * This component exposes a standardized interface:
+ * STANDARDIZED INTERFACE:
  *   `calculateAnomalyScore(event) => { anomalyScore, factors, confidence }`
- * To upgrade to a production ML model, replace the internal scoring logic with an ONNX runtime,
- * TensorFlow.js model, or an API call to a trained scikit-learn microservice without altering
- * any upstream ingestion, alerting, or database pipelines.
  */
+
+import {
+  evaluateBaselineDeviation,
+  calculateHourAnomaly,
+  calculateIpDeviation,
+  calculateDeviceDeviation
+} from './userBaseline.js';
+
+import { extractOutboundBytes } from './exfilDetector.js';
+import { extractFilesAccessedCount } from './fileAccessDetector.js';
 
 /**
  * Feature Normalization and Scoring Configuration
  */
 export const SCORER_CONFIG = {
-  // Feature weights (must sum to 1.00)
+  // Feature weights across all multi-signal dimensions (must sum to 1.00)
   weights: {
-    failedLoginCount: 0.22,
-    loginHour: 0.10,
-    isNewDevice: 0.15,
-    isNewIp: 0.12,
-    dataTransferMb: 0.15,
-    filesAccessed: 0.10,
-    requestRate: 0.08,
-    unusualProcessActivity: 0.08
+    failedLoginCount: 0.18, // Failed login attempts / velocity burst
+    loginHour: 0.08, // Off-hours / temporal deviation
+    isNewDevice: 0.10, // Unfamiliar client hardware signature
+    isNewIp: 0.10, // Unfamiliar network IP / subnet
+    baselineDeviation: 0.14, // Rolling per-user behavioral profile deviation
+    dataTransferMb: 0.15, // Outbound traffic volume / exfiltration spike
+    filesAccessed: 0.12, // Mass file access / sensitive credential traversal
+    requestRate: 0.08, // API request velocity / rate limits
+    unusualProcessActivity: 0.05 // Suspicious headless / background script execution
   },
 
   // Normalization thresholds
@@ -53,8 +63,7 @@ export const SCORER_CONFIG = {
 };
 
 /**
- * Normalizes the failed login count into a [0.0, 1.0] scale.
- * Uses a linear saturation curve up to maxFailedLoginsSaturation.
+ * Normalizes failed login counts / burst metrics into [0.0, 1.0].
  */
 export const normalizeFailedLogins = (count, max = SCORER_CONFIG.thresholds.maxFailedLoginsSaturation) => {
   const num = Math.max(0, Number(count) || 0);
@@ -62,15 +71,20 @@ export const normalizeFailedLogins = (count, max = SCORER_CONFIG.thresholds.maxF
 };
 
 /**
- * Normalizes the authentication hour into a [0.0, 1.0] anomaly metric.
- * Deep night (01:00 - 04:00) scores highest, while standard business hours score 0.0.
+ * Normalizes authentication hour into [0.0, 1.0].
+ * Adapts to user empirical history when baseline profile is available.
  */
-export const normalizeLoginHour = (hour, thresholds = SCORER_CONFIG.thresholds) => {
+export const normalizeLoginHour = (hour, thresholds = SCORER_CONFIG.thresholds, baseline = null) => {
   if (typeof hour !== 'number' || isNaN(hour) || hour < 0 || hour > 23) {
     return 0.0;
   }
 
-  // 08:00 to 19:00: Standard business hours
+  // If user has an empirical baseline, use adaptive historical model
+  if (baseline && (baseline.hourlyFrequency || baseline.typicalHours || baseline.totalLogins)) {
+    return calculateHourAnomaly(hour, baseline);
+  }
+
+  // Standard business hours fallback (08:00 to 19:00)
   if (hour >= thresholds.normalHourRange.start && hour <= thresholds.normalHourRange.end) {
     return 0.0;
   }
@@ -89,7 +103,7 @@ export const normalizeLoginHour = (hour, thresholds = SCORER_CONFIG.thresholds) 
 };
 
 /**
- * Normalizes data transfer volume in megabytes into [0.0, 1.0].
+ * Normalizes outbound data transfer volume in megabytes into [0.0, 1.0].
  */
 export const normalizeDataTransfer = (mb, thresholds = SCORER_CONFIG.thresholds) => {
   const num = Math.max(0, Number(mb) || 0);
@@ -99,9 +113,10 @@ export const normalizeDataTransfer = (mb, thresholds = SCORER_CONFIG.thresholds)
 };
 
 /**
- * Normalizes accessed files count into [0.0, 1.0].
+ * Normalizes accessed files count and sensitive file indicators into [0.0, 1.0].
  */
-export const normalizeFilesAccessed = (count, thresholds = SCORER_CONFIG.thresholds) => {
+export const normalizeFilesAccessed = (count, thresholds = SCORER_CONFIG.thresholds, isSensitive = false) => {
+  if (isSensitive) return 1.0;
   const num = Math.max(0, Number(count) || 0);
   if (num <= thresholds.filesAccessedWarning) return 0.0;
   const span = thresholds.filesAccessedMax - thresholds.filesAccessedWarning;
@@ -119,7 +134,7 @@ export const normalizeRequestRate = (rpm, thresholds = SCORER_CONFIG.thresholds)
 };
 
 /**
- * Extracts and normalizes an hour value from an event object.
+ * Extracts hour value from generic event objects.
  */
 const extractHour = (event) => {
   if (typeof event.loginHour === 'number') return event.loginHour;
@@ -138,18 +153,31 @@ const extractHour = (event) => {
 };
 
 /**
- * Calculates the deterministic anomaly score across normalized security features.
+ * Detects whether event touches sensitive credential or configuration files.
+ */
+const checkSensitiveFilesPresence = (event) => {
+  if (event.hasSensitiveFileAccess === true || event.eventData?.hasSensitiveFileAccess === true) {
+    return true;
+  }
+
+  const sensitiveKeywords = ['.env', 'id_rsa', 'id_ed25519', '.pem', '.key', 'credentials.json', 'secrets.yaml', '/etc/shadow', '/etc/passwd'];
+  const pathsToCheck = [];
+
+  if (typeof event.filePath === 'string') pathsToCheck.push(event.filePath);
+  if (typeof event.targetFile === 'string') pathsToCheck.push(event.targetFile);
+  if (Array.isArray(event.accessedFiles)) pathsToCheck.push(...event.accessedFiles);
+  if (Array.isArray(event.files)) pathsToCheck.push(...event.files);
+  if (Array.isArray(event.eventData?.accessedFiles)) pathsToCheck.push(...event.eventData.accessedFiles);
+
+  return pathsToCheck.some((p) => typeof p === 'string' && sensitiveKeywords.some((kw) => p.toLowerCase().includes(kw)));
+};
+
+/**
+ * Calculates multi-signal anomaly score across normalized security telemetry features.
+ * Accepts generic event objects (logins, file accesses, outbound data transfers, API velocity spikes).
  *
- * @param {Object} event - Normalized security event containing numerical/boolean telemetry features:
- *   - failedLoginCount: number
- *   - loginHour: number (0-23)
- *   - isNewDevice: boolean
- *   - isNewIp: boolean
- *   - dataTransferMb: number (MB)
- *   - filesAccessed: number
- *   - requestRate: number (RPM)
- *   - unusualProcessActivity: boolean
- * @param {Object} [customConfig] - Optional override for weights and thresholds
+ * @param {Object} event - Generic security event object
+ * @param {Object} [customConfig] - Optional config overrides for weights and thresholds
  * @returns {{anomalyScore: number, factors: Array<string>, confidence: number}}
  */
 export const calculateAnomalyScore = (event = {}, customConfig = {}) => {
@@ -160,54 +188,136 @@ export const calculateAnomalyScore = (event = {}, customConfig = {}) => {
   let evaluatedFeatureCount = 0;
   const totalSupportedFeatures = Object.keys(weights).length;
 
-  // 1. Extract feature values with fallback resolution from event or eventData
-  const rawFailedLogins = event.failedLoginCount ?? event.failedAttempts ?? event.eventData?.attempts ?? 0;
-  const rawHour = extractHour(event);
-  const rawIsNewDevice = Boolean(
-    event.isNewDevice ??
-    event.eventData?.isNewDevice ??
-    (event.deviceId && event.userBaseline?.knownDevices && !event.userBaseline.knownDevices.includes(event.deviceId))
-  );
-  const rawIsNewIp = Boolean(
-    event.isNewIp ??
-    event.eventData?.isNewIp ??
-    (event.ipAddress && event.userBaseline?.knownIps && !event.userBaseline.knownIps.includes(event.ipAddress))
-  );
-  const rawDataTransferMb = event.dataTransferMb ?? (event.outboundBytes ? event.outboundBytes / (1024 * 1024) : 0);
-  const rawFilesAccessed = event.filesAccessed ?? event.eventData?.filesAccessed ?? 0;
-  const rawRequestRate = event.requestRate ?? event.eventData?.requestRate ?? 0;
-  const rawUnusualProcess = Boolean(event.unusualProcessActivity ?? event.eventData?.unusualProcessActivity ?? false);
+  // 1. Evaluate rolling per-user baseline profile
+  const baseline = event.userBaseline || {};
+  const baselineAnalysis = evaluateBaselineDeviation(event, baseline);
 
-  // 2. Compute normalized feature vectors [0.0 to 1.0]
+  // 2. Extract telemetry signals across diverse generic event types
+  const rawFailedLogins = Math.max(
+    0,
+    Number(
+      event.failedLoginCount ??
+      event.failedAttempts ??
+      event.attempts ??
+      event.eventData?.attempts ??
+      0
+    )
+  );
+
+  const rawHour = extractHour(event);
+
+  // Device familiarity signal
+  let normNewDevice = 0.0;
+  if (event.deviceId && baseline && (baseline.knownDevices?.length > 0 || baseline.deviceProfiles?.length > 0)) {
+    normNewDevice = calculateDeviceDeviation(event.deviceId, baseline).deviation;
+  } else if (event.isNewDevice !== undefined || event.eventData?.isNewDevice !== undefined) {
+    normNewDevice = Boolean(event.isNewDevice ?? event.eventData?.isNewDevice) ? 1.0 : 0.0;
+  }
+
+  // Network IP / Subnet familiarity signal
+  let normNewIp = 0.0;
+  const ipAddress = event.ipAddress || event.sourceIp || event.eventData?.ipAddress;
+  if (ipAddress && baseline && (baseline.knownIps?.length > 0 || baseline.ipProfiles?.length > 0 || baseline.ipSubnets?.length > 0)) {
+    normNewIp = calculateIpDeviation(ipAddress, baseline).deviation;
+  } else if (event.isNewIp !== undefined || event.eventData?.isNewIp !== undefined) {
+    normNewIp = Boolean(event.isNewIp ?? event.eventData?.isNewIp) ? 1.0 : 0.0;
+  }
+
+  // Outbound data volume signal
+  const outboundBytes = extractOutboundBytes(event);
+  const rawDataTransferMb = outboundBytes / (1024 * 1024);
+
+  // File access and sensitive credential traversal signal
+  const rawFilesAccessed = extractFilesAccessedCount(event);
+  const hasSensitiveFiles = checkSensitiveFilesPresence(event);
+
+  // Velocity and process execution signals
+  const rawRequestRate = Math.max(0, Number(event.requestRate ?? event.rpm ?? event.eventData?.requestRate ?? 0));
+  const rawUnusualProcess = Boolean(
+    event.unusualProcessActivity ??
+    event.isHeadless ??
+    event.eventData?.unusualProcessActivity ??
+    false
+  );
+
+  // 3. Compute normalized feature vectors [0.0 to 1.0]
   const normFailedLogins = normalizeFailedLogins(rawFailedLogins, config.thresholds.maxFailedLoginsSaturation);
-  const normHour = rawHour !== null ? normalizeLoginHour(rawHour, config.thresholds) : 0.0;
-  const normNewDevice = rawIsNewDevice ? 1.0 : 0.0;
-  const normNewIp = rawIsNewIp ? 1.0 : 0.0;
+  const normHour = rawHour !== null ? normalizeLoginHour(rawHour, config.thresholds, baseline) : 0.0;
+  const normBaselineDeviation = baselineAnalysis.normDeviation;
   const normDataTransfer = normalizeDataTransfer(rawDataTransferMb, config.thresholds);
-  const normFilesAccessed = normalizeFilesAccessed(rawFilesAccessed, config.thresholds);
+  const normFilesAccessed = normalizeFilesAccessed(rawFilesAccessed, config.thresholds, hasSensitiveFiles);
   const normRequestRate = normalizeRequestRate(rawRequestRate, config.thresholds);
   const normUnusualProcess = rawUnusualProcess ? 1.0 : 0.0;
 
   // Track populated features for confidence estimation
-  if (event.failedLoginCount !== undefined || event.failedAttempts !== undefined) evaluatedFeatureCount++;
+  if (event.failedLoginCount !== undefined || event.failedAttempts !== undefined || event.attempts !== undefined) evaluatedFeatureCount++;
   if (rawHour !== null) evaluatedFeatureCount++;
   if (event.isNewDevice !== undefined || event.deviceId !== undefined) evaluatedFeatureCount++;
   if (event.isNewIp !== undefined || event.ipAddress !== undefined) evaluatedFeatureCount++;
-  if (event.dataTransferMb !== undefined || event.outboundBytes !== undefined) evaluatedFeatureCount++;
-  if (event.filesAccessed !== undefined) evaluatedFeatureCount++;
-  if (event.requestRate !== undefined) evaluatedFeatureCount++;
-  if (event.unusualProcessActivity !== undefined) evaluatedFeatureCount++;
+  if (event.userBaseline !== undefined) evaluatedFeatureCount++;
+  if (outboundBytes > 0 || event.dataTransferMb !== undefined || event.outboundBytes !== undefined) evaluatedFeatureCount++;
+  if (rawFilesAccessed > 0 || hasSensitiveFiles || event.filesAccessed !== undefined) evaluatedFeatureCount++;
+  if (rawRequestRate > 0 || event.requestRate !== undefined) evaluatedFeatureCount++;
+  if (event.unusualProcessActivity !== undefined || event.isHeadless !== undefined) evaluatedFeatureCount++;
 
-  // 3. Calculate linear weighted sum
+  // 4. Calculate linear weighted sum across all signal vectors
   const featureScores = [
-    { name: 'failedLoginCount', norm: normFailedLogins, weight: weights.failedLoginCount, desc: `Failed login attempts: ${rawFailedLogins}` },
-    { name: 'loginHour', norm: normHour, weight: weights.loginHour, desc: `Off-hours authentication (hour: ${rawHour ?? 'N/A'}:00)` },
-    { name: 'isNewDevice', norm: normNewDevice, weight: weights.isNewDevice, desc: 'Unfamiliar client device signature' },
-    { name: 'isNewIp', norm: normNewIp, weight: weights.isNewIp, desc: 'Unfamiliar network IP address' },
-    { name: 'dataTransferMb', norm: normDataTransfer, weight: weights.dataTransferMb, desc: `Anomalous outbound transfer volume (${rawDataTransferMb.toFixed(1)} MB)` },
-    { name: 'filesAccessed', norm: normFilesAccessed, weight: weights.filesAccessed, desc: `Abnormal file access frequency (${rawFilesAccessed} files)` },
-    { name: 'requestRate', norm: normRequestRate, weight: weights.requestRate, desc: `High API request velocity (${rawRequestRate} req/min)` },
-    { name: 'unusualProcessActivity', norm: normUnusualProcess, weight: weights.unusualProcessActivity, desc: 'Suspicious background execution or headless script activity' }
+    {
+      name: 'failedLoginCount',
+      norm: normFailedLogins,
+      weight: weights.failedLoginCount,
+      desc: `Failed login attempts: ${rawFailedLogins}`
+    },
+    {
+      name: 'loginHour',
+      norm: normHour,
+      weight: weights.loginHour,
+      desc: `Off-hours authentication (hour: ${rawHour ?? 'N/A'}:00)`
+    },
+    {
+      name: 'isNewDevice',
+      norm: normNewDevice,
+      weight: weights.isNewDevice,
+      desc: 'Unfamiliar client device signature'
+    },
+    {
+      name: 'isNewIp',
+      norm: normNewIp,
+      weight: weights.isNewIp,
+      desc: normNewIp === 0.25 ? 'IP in known subnet (/24)' : 'Unfamiliar network IP address'
+    },
+    {
+      name: 'baselineDeviation',
+      norm: normBaselineDeviation,
+      weight: weights.baselineDeviation,
+      desc: 'Rolling behavioral profile deviation (unusual combination of hour, subnet, and device)'
+    },
+    {
+      name: 'dataTransferMb',
+      norm: normDataTransfer,
+      weight: weights.dataTransferMb,
+      desc: `Anomalous outbound transfer volume (${rawDataTransferMb.toFixed(1)} MB)`
+    },
+    {
+      name: 'filesAccessed',
+      norm: normFilesAccessed,
+      weight: weights.filesAccessed,
+      desc: hasSensitiveFiles
+        ? 'Sensitive credential / secret configuration file accessed'
+        : `Abnormal file access frequency (${rawFilesAccessed} files)`
+    },
+    {
+      name: 'requestRate',
+      norm: normRequestRate,
+      weight: weights.requestRate,
+      desc: `High API request velocity (${rawRequestRate} req/min)`
+    },
+    {
+      name: 'unusualProcessActivity',
+      norm: normUnusualProcess,
+      weight: weights.unusualProcessActivity,
+      desc: 'Suspicious background execution or headless script activity'
+    }
   ];
 
   let weightedBaseSum = 0;
@@ -223,8 +333,7 @@ export const calculateAnomalyScore = (event = {}, customConfig = {}) => {
     }
   }
 
-  // 4. Multi-Dimensional Non-Linear Interaction Penalty
-  // Elevates score when multiple anomalous vectors occur together in hyperspace
+  // 5. Multi-Dimensional Non-Linear Interaction Penalty
   let interactionBonus = 0;
   if (elevatedCount >= 2) {
     interactionBonus = Math.min(
@@ -236,11 +345,11 @@ export const calculateAnomalyScore = (event = {}, customConfig = {}) => {
     );
   }
 
-  // 5. Final Composite Anomaly Score (Scale: 0 to 100)
+  // 6. Final Composite Anomaly Score (Scale: 0 to 100)
   const rawFinalScore = (weightedBaseSum * 100) + interactionBonus;
   const boundedAnomalyScore = Math.min(100, Math.max(0, Math.round(rawFinalScore)));
 
-  // 6. Confidence Score based on telemetry feature completeness
+  // 7. Confidence Score based on telemetry feature completeness
   const confidence = Math.min(1.0, Math.max(0.5, Number((evaluatedFeatureCount / totalSupportedFeatures).toFixed(2))));
 
   return {
