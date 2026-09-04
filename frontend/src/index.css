@@ -4,62 +4,69 @@
 
 @layer base {
   body {
-    background-color: #161616;
-    color: #F2F1ED;
+    background-color: #0d0a14;
+    color: #f8fafc;
     background-image: 
-      radial-gradient(circle at 50% 0%, rgba(113, 0, 20, 0.18) 0%, transparent 60%),
-      radial-gradient(circle at 85% 30%, rgba(179, 143, 111, 0.06) 0%, transparent 50%),
-      linear-gradient(to right, rgba(242, 241, 237, 0.02) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(242, 241, 237, 0.02) 1px, transparent 1px);
-    background-size: 100% 100%, 100% 100%, 48px 48px, 48px 48px;
+      radial-gradient(circle at 12% 8%, rgba(139, 92, 246, 0.09) 0%, transparent 45%),
+      radial-gradient(circle at 88% 25%, rgba(168, 85, 247, 0.06) 0%, transparent 40%),
+      radial-gradient(circle at 50% 90%, rgba(139, 92, 246, 0.05) 0%, transparent 50%),
+      linear-gradient(to right, rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+    background-size: 100% 100%, 100% 100%, 100% 100%, 48px 48px, 48px 48px;
     background-attachment: fixed;
+    font-family: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif;
   }
 }
 
-/* Custom Obsidian & Sand Scrollbar */
+/* Custom Modern Purple Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #111111;
+  background: #0d0a14;
 }
 ::-webkit-scrollbar-thumb {
-  background: #2C2C2C;
-  border-radius: 3px;
+  background: #282044;
+  border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #B38F6F;
+  background: #8b5cf6;
 }
 
 @layer components {
-  /* Luxury Obsidian Panel */
-  .cyber-panel {
-    @apply bg-obsidian-850/90 backdrop-blur-md border border-obsidian-700/80 rounded-xl shadow-obsidian-card transition-all duration-300;
+  /* Modern SaaS Card (Border radius 20-24px, no hard borders, soft shadows) */
+  .saas-card {
+    @apply bg-[#151220] rounded-[22px] shadow-saas-card transition-all duration-300;
   }
   
-  .cyber-panel:hover {
-    @apply border-sand-500/40 shadow-sand-glow-sm;
+  .saas-card-interactive {
+    @apply bg-[#151220] rounded-[22px] shadow-saas-card hover:shadow-saas-card-hover transition-all duration-300;
   }
 
-  .cyber-panel-crimson {
-    @apply bg-obsidian-850/95 backdrop-blur-md border border-crimson-600/50 rounded-xl shadow-crimson-glow-sm;
+  .saas-hero-card {
+    @apply bg-gradient-to-br from-[#8b5cf6] via-[#ec4899] to-[#f97316] rounded-[22px] shadow-hero-gradient text-white transition-all duration-300;
   }
 
-  .cyber-panel-sand {
-    @apply bg-obsidian-850/95 backdrop-blur-md border border-sand-500/50 rounded-xl shadow-sand-glow-sm;
+  /* Status Badges */
+  .badge-purple {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-500/15 text-purple-300 border border-purple-500/30;
   }
 
-  /* Palette Badges */
-  .badge-crimson {
-    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono font-semibold bg-crimson-700/25 text-crimson-400 border border-crimson-500/40 shadow-[0_0_10px_rgba(113,0,20,0.3)];
+  .badge-yellow {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-yellow-400/15 text-yellow-300 border border-yellow-400/30;
   }
 
-  .badge-sand {
-    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono font-semibold bg-sand-500/20 text-sand-300 border border-sand-500/40 shadow-sand-glow-sm;
+  .badge-green {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30;
   }
 
-  .badge-pearl {
-    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-mono font-semibold bg-pearl-100/15 text-pearl-100 border border-pearl-200/30;
+  .badge-red {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-500/15 text-rose-300 border border-rose-500/30;
+  }
+
+  .badge-slate {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700;
   }
 }
+

@@ -10,10 +10,15 @@ import {
   ChevronUp,
   Terminal,
   Clock,
-  Smartphone
+  Smartphone,
+  Flame,
+  Globe,
+  User
 } from 'lucide-react';
+import { useLanguage } from '../context/LanguageContext';
 
 export default function LiveAlertFeed({ alerts = [], onResolveAlert }) {
+  const { t } = useLanguage();
   const [filter, setFilter] = useState('ALL');
   const [expandedId, setExpandedId] = useState(null);
 
@@ -22,62 +27,114 @@ export default function LiveAlertFeed({ alerts = [], onResolveAlert }) {
     return alert.riskLevel === filter;
   });
 
-  const getRiskBadge = (level) => {
+  const getThreatIcon = (alert) => {
+    if (alert.rawTelemetry?.anomaly === 'AUTH_BURST_ATTACK' || alert.rawTelemetry?.eventType === 'AUTH_BURST_FAILURE') {
+      return <Flame className="w-4 h-4 text-rose-400" />;
+    }
+    if (alert.rawTelemetry?.anomaly === 'IMPOSSIBLE_TRAVEL_VELOCITY' || alert.rawTelemetry?.eventType === 'GEO_IMPOSSIBLE_TRAVEL') {
+      return <Globe className="w-4 h-4 text-purple-400" />;
+    }
+    return <ShieldAlert className="w-4 h-4 text-yellow-400" />;
+  };
+
+  const getThreatAvatarBg = (level) => {
     switch (level) {
       case 'CRITICAL':
-        return <span className="badge-crimson">CRITICAL RISK</span>;
+        return 'bg-rose-500/15 border-rose-500/30';
       case 'HIGH':
-        return <span className="badge-crimson">HIGH THREAT</span>;
+        return 'bg-purple-500/15 border-purple-500/30';
       case 'MEDIUM':
-        return <span className="badge-sand">ELEVATED</span>;
-      case 'LOW':
-        return <span className="badge-sand">LOW RISK</span>;
+        return 'bg-yellow-400/15 border-yellow-400/30';
       default:
-        return <span className="badge-sand">{level}</span>;
+        return 'bg-slate-800 border-slate-700';
+    }
+  };
+
+  const getRiskBadge = (alert) => {
+    if (alert.isResolved) {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+          <CheckCircle2 className="w-3 h-3" /> {t('filterResolved', 'Resolved')}
+        </span>
+      );
+    }
+    switch (alert.riskLevel) {
+      case 'CRITICAL':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse">
+            {t('filterCritical', 'Critical')}
+          </span>
+        );
+      case 'HIGH':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40">
+            {t('metricThreatLevel', 'High Threat')}
+          </span>
+        );
+      case 'MEDIUM':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-yellow-400/20 text-yellow-300 border border-yellow-400/40">
+            {t('filterActive', 'Active')}
+          </span>
+        );
+      default:
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-800 text-slate-300 border border-slate-700">
+            {alert.riskLevel}
+          </span>
+        );
     }
   };
 
   return (
-    <div className="cyber-panel p-5">
+    <div className="saas-card p-6 relative">
+      
       {/* Header & Filter Controls */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-5">
         <div>
           <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-sand-400" />
-            <h2 className="text-sm font-mono font-bold uppercase tracking-wider text-pearl-100">
-              Zero-Jargon Threat Feed (LLM Translated)
+            <div className="p-1.5 rounded-lg bg-purple-500/10 text-purple-400">
+              <Sparkles className="w-4 h-4" />
+            </div>
+            <h2 className="text-base font-bold text-white tracking-tight">
+              {t('feedTitle', 'Zero-Jargon Threat Feed')}
             </h2>
           </div>
-          <p className="text-xs text-pearl-400 font-mono mt-0.5">
-            Real-time plain-English incident narratives with 1-click mitigation controls & WhatsApp dispatches
+          <p className="text-xs text-slate-400 mt-0.5">
+            {t('feedSub', 'Real-time plain-English incident narratives with instant 1-click remediation')}
           </p>
         </div>
 
         {/* Severity Filter Tabs */}
-        <div className="flex items-center gap-1 p-1 rounded-lg bg-obsidian-900 border border-obsidian-700 text-xs font-mono">
-          {['ALL', 'CRITICAL', 'HIGH', 'MEDIUM'].map(level => (
+        <div className="flex items-center gap-1 p-1 rounded-2xl bg-[#0d0a14] border border-[#231d38] text-xs">
+          {[
+            { id: 'ALL', label: t('filterAllAlerts', 'ALL') },
+            { id: 'CRITICAL', label: t('filterCritical', 'CRITICAL') },
+            { id: 'HIGH', label: 'HIGH' },
+            { id: 'MEDIUM', label: 'MEDIUM' }
+          ].map(item => (
             <button
-              key={level}
-              onClick={() => setFilter(level)}
-              className={`px-2.5 py-1 rounded transition-all ${
-                filter === level
-                  ? 'bg-obsidian-750 text-pearl-100 font-semibold'
-                  : 'text-pearl-400 hover:text-pearl-100'
+              key={item.id}
+              onClick={() => setFilter(item.id)}
+              className={`px-3 py-1 rounded-xl font-medium transition-all ${
+                filter === item.id
+                  ? 'bg-[#251e3b] text-purple-300 shadow-sm border border-purple-500/30'
+                  : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              {level}
+              {item.label}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Feed List */}
-      <div className="space-y-3.5">
+      {/* Feed List Items */}
+      <div className="space-y-3">
         {filteredAlerts.length === 0 ? (
-          <div className="py-12 text-center text-pearl-400 font-mono text-xs border border-dashed border-obsidian-700 rounded-xl">
-            <ShieldCheck className="w-8 h-8 mx-auto text-sand-400 mb-2 opacity-80" />
-            <p>No active anomalies found matching filter criteria.</p>
-            <p className="text-[11px] text-pearl-500 mt-1">Telemetry stream running normally.</p>
+          <div className="py-12 text-center text-slate-400 text-xs border border-dashed border-[#231d38] rounded-2xl">
+            <ShieldCheck className="w-8 h-8 mx-auto text-emerald-400 mb-2 opacity-80" />
+            <p className="font-semibold text-slate-300">{t('noAlertsFound', 'No active incidents matching filter criteria.')}</p>
+            <p className="text-slate-500 mt-1">{t('statusNominal', 'Telemetry stream running nominally.')}</p>
           </div>
         ) : (
           filteredAlerts.map(alert => {
@@ -85,85 +142,85 @@ export default function LiveAlertFeed({ alerts = [], onResolveAlert }) {
             return (
               <div
                 key={alert.id}
-                className={`relative rounded-xl transition-all duration-200 border ${
+                className={`relative rounded-2xl transition-all duration-200 p-4 sm:p-5 ${
                   alert.isResolved
-                    ? 'bg-obsidian-900/40 border-obsidian-800 opacity-60'
-                    : alert.riskLevel === 'CRITICAL'
-                    ? 'bg-obsidian-900/90 border-crimson-600/70 hover:border-crimson-500 shadow-crimson-glow-sm/30'
-                    : alert.riskLevel === 'HIGH'
-                    ? 'bg-obsidian-900/90 border-crimson-700/50 hover:border-crimson-500 shadow-crimson-glow-sm/20'
-                    : 'bg-obsidian-900/80 border-obsidian-700 hover:border-sand-500/40'
-                } p-4 sm:p-5`}
+                    ? 'bg-[#100d1a]/50 opacity-60'
+                    : 'bg-[#120e1f] hover:bg-[#181329] border border-purple-500/10 hover:border-purple-500/30'
+                }`}
               >
-                {/* Top Row: Badges, Target User, Timestamp */}
-                <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {getRiskBadge(alert.riskLevel)}
-                    <span className="text-xs font-mono font-semibold text-pearl-100 bg-obsidian-800 px-2 py-0.5 rounded border border-obsidian-700">
-                      {alert.userEmail}
-                    </span>
-                    <span className="text-[11px] font-mono text-pearl-400 hidden sm:inline">
-                      ID: {alert.id}
-                    </span>
-                    {alert.dispatchedToWhatsApp && (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/70 text-emerald-400 border border-emerald-700/50">
-                        <Smartphone className="w-3 h-3" />
-                        <span>WHATSAPP DISPATCHED</span>
-                      </span>
-                    )}
+                {/* Main Row: Avatar + Title/Subtitle + Status Badge & Timestamp */}
+                <div className="flex items-start sm:items-center justify-between gap-3.5">
+                  
+                  {/* Left: Circular Avatar & Stacked Details */}
+                  <div className="flex items-start sm:items-center gap-3.5 flex-1 min-w-0">
+                    
+                    {/* Circular Avatar Icon */}
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 border ${getThreatAvatarBg(alert.riskLevel)}`}>
+                      {getThreatIcon(alert)}
+                    </div>
+
+                    {/* Stacked Bold Title & Muted Subtitle */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-bold text-white truncate">
+                          {alert.userEmail}
+                        </span>
+                        <span className="text-[11px] font-mono text-slate-400 bg-[#1a152b] px-2 py-0.5 rounded-md">
+                          {alert.id}
+                        </span>
+                        {alert.dispatchedToWhatsApp && (
+                          <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                            <Smartphone className="w-3 h-3" />
+                            <span>WhatsApp</span>
+                          </span>
+                        )}
+                      </div>
+                      
+                      <p className="text-xs text-slate-300 mt-1 line-clamp-2 leading-relaxed">
+                        {alert.plainEnglishSummary}
+                      </p>
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-1.5 text-xs font-mono text-pearl-400">
-                    <Clock className="w-3.5 h-3.5 text-pearl-500" />
-                    <span>{alert.timeAgo || 'Just now'}</span>
+                  {/* Right: Status Badge & Timestamp Pill */}
+                  <div className="flex flex-col items-end gap-1.5 shrink-0">
+                    {getRiskBadge(alert)}
+                    <div className="flex items-center gap-1 text-[11px] text-slate-400">
+                      <Clock className="w-3 h-3 text-slate-500" />
+                      <span>{alert.timeAgo || 'Just now'}</span>
+                    </div>
                   </div>
+
                 </div>
 
-                {/* Plain English LLM Output */}
-                <div className="bg-obsidian-950/90 rounded-lg p-3.5 border border-obsidian-700/60 mb-3">
-                  <div className="flex items-center gap-2 mb-1.5 text-[11px] font-mono font-semibold text-sand-400">
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>PLAIN-ENGLISH TRANSLATION:</span>
-                  </div>
-                  <p className="text-sm text-pearl-100 leading-relaxed font-sans">
-                    {alert.plainEnglishSummary}
-                  </p>
-                </div>
-
-                {/* Recommended Actions / 1-Click Controls */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] font-mono text-pearl-400">
-                      Suggested Action:
-                    </span>
-                    <span className="text-xs font-mono font-medium text-sand-300">
-                      {alert.recommendedAction}
-                    </span>
+                {/* Bottom Actions Row */}
+                <div className="flex flex-wrap items-center justify-between gap-2 mt-3 pt-2.5 border-t border-[#231d38]/60 text-xs">
+                  <div className="flex items-center gap-2 text-slate-400">
+                    <span className="text-slate-500">{t('takeRemediation', 'Suggested Action')}:</span>
+                    <span className="text-purple-300 font-semibold">{alert.recommendedAction}</span>
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {/* Expand Raw Telemetry Button */}
                     <button
                       onClick={() => setExpandedId(isExpanded ? null : alert.id)}
-                      className="flex items-center gap-1 text-xs font-mono text-pearl-300 hover:text-pearl-100 px-2.5 py-1.5 rounded bg-obsidian-800 hover:bg-obsidian-750 transition-colors"
+                      className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-200 px-2.5 py-1 rounded-xl bg-[#1c182d] hover:bg-[#251e3b] transition-colors"
                     >
-                      <Terminal className="w-3 h-3" />
-                      <span>{isExpanded ? 'Hide Raw' : 'Inspect Raw'}</span>
+                      <Terminal className="w-3 h-3 text-purple-400" />
+                      <span>{isExpanded ? t('hideTelemetry', 'Hide Raw') : t('showTelemetry', 'Inspect Raw')}</span>
                       {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                     </button>
 
-                    {/* 1-Click Action Button */}
                     {!alert.isResolved ? (
                       <button
                         onClick={() => onResolveAlert(alert.id, 'LOCK_ACCOUNT')}
-                        className="flex items-center gap-1.5 text-xs font-mono font-bold px-3.5 py-1.5 rounded bg-crimson-700 text-pearl-50 border border-crimson-500 hover:bg-crimson-600 hover:shadow-crimson-glow transition-all"
+                        className="flex items-center gap-1.5 text-xs font-bold px-3.5 py-1 rounded-xl bg-purple-600 hover:bg-purple-500 text-white shadow-[0_0_12px_rgba(139,92,246,0.35)] transition-all active:scale-95"
                       >
-                        <Lock className="w-3.5 h-3.5" />
-                        <span>Lock Account</span>
+                        <Lock className="w-3.5 h-3.5 text-yellow-300" />
+                        <span>{t('takeRemediation', 'Lock Account')}</span>
                       </button>
                     ) : (
-                      <span className="flex items-center gap-1 text-xs font-mono text-sand-400">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Remediated
+                      <span className="flex items-center gap-1 text-xs text-emerald-400 font-medium">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> {t('actionCompleted', 'Remediated')}
                       </span>
                     )}
                   </div>
@@ -171,20 +228,24 @@ export default function LiveAlertFeed({ alerts = [], onResolveAlert }) {
 
                 {/* Expandable Technical Log Drawer */}
                 {isExpanded && (
-                  <div className="mt-3.5 pt-3 border-t border-obsidian-750 font-mono text-xs text-pearl-300 bg-obsidian-950 p-3 rounded-lg overflow-x-auto border border-obsidian-800">
-                    <div className="text-[11px] text-sand-400 font-semibold mb-1">
-                      // RAW TELEMETRY JSON (PRE-LLM SYNTHESIS):
+                  <div className="mt-3 pt-3 border-t border-[#231d38] font-mono text-xs text-slate-300 bg-[#0d0a14] p-3.5 rounded-xl border border-purple-500/20">
+                    <div className="text-[11px] text-purple-400 font-semibold mb-1 flex items-center gap-1">
+                      <span>// RAW TELEMETRY JSON (PRE-LLM SYNTHESIS):</span>
                     </div>
-                    <pre className="text-[11px] text-pearl-200 leading-tight">
+                    <pre className="text-[11px] text-slate-300 leading-relaxed overflow-x-auto">
                       {JSON.stringify(alert.rawTelemetry, null, 2)}
                     </pre>
                   </div>
                 )}
+
               </div>
             );
           })
         )}
       </div>
+
     </div>
   );
 }
+
+

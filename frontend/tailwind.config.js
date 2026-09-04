@@ -7,60 +7,62 @@ export default {
   darkMode: 'class',
   theme: {
     extend: {
+      spacing: {
+        '4.5': '1.125rem',
+      },
       colors: {
-        // Palette Tokens from User
-        crimson: {
-          DEFAULT: '#710014',
-          900: '#40000B',
-          800: '#58000F',
-          700: '#710014', // Primary Crimson Depth
-          600: '#8C0019',
-          500: '#A8001E',
-          400: '#C70F30',
-          glow: '#E61A3C',
+        // Modern SaaS Dark Palette with Purple Tint
+        dark: {
+          bg: '#0d0a14',       // Base page background
+          card: '#151220',     // Slightly lighter card surface
+          cardHover: '#1c182d', // Elevated card / active item
+          border: '#231d38',   // Subtle border
+          input: '#120e1d',    // Input fields
+          sidebar: '#0e0a17',  // Sidebar background
         },
-        sand: {
-          DEFAULT: '#B38F6F',
-          900: '#4D3B2C',
-          800: '#6B533E',
-          700: '#8A6C52',
-          600: '#A17F62',
-          500: '#B38F6F', // Primary Warm Sand
-          400: '#C7A689',
-          300: '#DBBDA3',
-          glow: '#EED5C0',
+        // Primary Accent: Purple to Violet
+        brand: {
+          purple: '#8b5cf6',
+          violet: '#a855f7',
+          deep: '#7c3aed',
+          glow: 'rgba(139, 92, 246, 0.45)',
         },
-        pearl: {
-          DEFAULT: '#F2F1ED', // Primary Soft Pearl
-          50: '#FAF9F7',
-          100: '#F2F1ED',
-          200: '#E4E2DC',
-          300: '#D1CEC5',
-          400: '#A8A499',
-          500: '#7F7B70',
+        // Secondary Accent: Warm Yellow / Gold
+        accent: {
+          yellow: '#facc15',
+          gold: '#eab308',
+          glow: 'rgba(250, 204, 21, 0.4)',
         },
-        obsidian: {
-          DEFAULT: '#161616', // Primary Obsidian Black
-          950: '#0C0C0C',
-          900: '#111111',
-          850: '#161616',
-          800: '#1D1D1D',
-          750: '#242424',
-          700: '#2C2C2C',
-          600: '#383838',
-          500: '#4A4A4A',
+        // Semantic status colors
+        status: {
+          success: '#10b981',
+          warning: '#facc15',
+          danger: '#f43f5e',
+          info: '#8b5cf6',
         }
       },
       fontFamily: {
-        mono: ['JetBrains Mono', 'Fira Code', 'Courier New', 'monospace'],
-        sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+        sans: ['"Plus Jakarta Sans"', 'Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        mono: ['"JetBrains Mono"', 'Fira Code', 'monospace'],
+      },
+      borderRadius: {
+        '2xl': '20px',
+        '3xl': '24px',
+        '4xl': '28px',
       },
       boxShadow: {
-        'crimson-glow': '0 0 25px -3px rgba(113, 0, 20, 0.55)',
-        'crimson-glow-sm': '0 0 12px -2px rgba(168, 0, 30, 0.5)',
-        'sand-glow': '0 0 20px -3px rgba(179, 143, 111, 0.35)',
-        'sand-glow-sm': '0 0 10px -2px rgba(179, 143, 111, 0.4)',
-        'obsidian-card': '0 8px 32px 0 rgba(0, 0, 0, 0.85)',
+        'saas-card': '0 10px 30px -5px rgba(0, 0, 0, 0.6), 0 0 1px 1px rgba(139, 92, 246, 0.08)',
+        'saas-card-hover': '0 15px 35px -5px rgba(0, 0, 0, 0.7), 0 0 20px 2px rgba(139, 92, 246, 0.15)',
+        'purple-glow': '0 0 25px -3px rgba(139, 92, 246, 0.5)',
+        'purple-glow-sm': '0 0 12px -2px rgba(139, 92, 246, 0.45)',
+        'yellow-glow': '0 0 20px -3px rgba(250, 204, 21, 0.4)',
+        'yellow-glow-sm': '0 0 10px -2px rgba(250, 204, 21, 0.35)',
+        'hero-gradient': '0 12px 40px -5px rgba(139, 92, 246, 0.35), 0 4px 20px -2px rgba(249, 115, 22, 0.25)',
+      },
+      backgroundImage: {
+        'purple-gradient': 'linear-gradient(135deg, #8b5cf6 0%, #a855f7 100%)',
+        'hero-gradient': 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 50%, #f97316 100%)',
+        'card-gradient': 'linear-gradient(180deg, rgba(28, 24, 45, 0.6) 0%, rgba(21, 18, 32, 0.95) 100%)',
       },
       animation: {
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
