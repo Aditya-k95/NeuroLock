@@ -364,7 +364,6 @@ export default function Dashboard() {
               <span>Full Radar Overview</span>
             </button>
 
-<<<<<<< HEAD
             <button
               onClick={() => setActiveTab('alerts')}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
@@ -376,13 +375,6 @@ export default function Dashboard() {
               <ShieldAlert className="w-4 h-4" />
               <span>Threat Alerts ({alerts.filter(a => !a.isResolved).length})</span>
             </button>
-=======
-        {/* 2. Historical Threat Severity Trend (7D / 30D Rolling Posture) */}
-        <TrafficTrendChart />
-
-        {/* 3. Interactive Real-Time Charts & Ingestion Timeline */}
-        <TrafficChart anomalyEventCount={spikeTriggerCount} />
->>>>>>> a22cdc2df7150d5a3d486687a3f133c0b24468c2
 
             <button
               onClick={() => setActiveTab('traffic')}
@@ -556,6 +548,7 @@ export default function Dashboard() {
           {/* View Tab 3: Dedicated Telemetry & Traffic Stream View */}
           {activeTab === 'traffic' && (
             <div className="space-y-6 animate-fadeIn">
+              <TrafficTrendChart />
               <TrafficChart anomalyEventCount={spikeTriggerCount} />
               
               <div className="saas-card p-6">
