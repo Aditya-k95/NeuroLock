@@ -2,8 +2,11 @@
  * Alert Generator Placeholder (LLM Contextual Intelligence)
  *
  * Converts complex cybersecurity telemetry into concise, zero-jargon,
- * plain-English briefings for non-technical stakeholders.
+ * plain-English briefings for non-technical stakeholders and dispatches
+ * multi-channel notifications (WhatsApp with automated SMS fallback).
  */
+
+import notificationDispatcher, { send as dispatchNotification } from '../services/notificationDispatcher.js';
 
 /**
  * Synthesizes an anomaly payload into a human-readable alert summary.
@@ -19,6 +22,21 @@ export const generatePlainEnglishAlert = async (anomalyPayload) => {
   };
 };
 
+/**
+ * Dispatches an alert notification via the multi-channel notification dispatcher.
+ * Tries WhatsApp first and falls back to SMS on failure.
+ *
+ * @param {string} to - Destination recipient phone number
+ * @param {string|Object} message - Threat summary or formatted alert payload
+ * @param {Object} [options] - Dispatcher configuration options
+ * @returns {Promise<{success: boolean, channel: string, messageId: string, fallback?: boolean}>}
+ */
+export const sendAlert = async (to, message, options = {}) => {
+  return await dispatchNotification(to, message, options);
+};
+
 export default {
-  generatePlainEnglishAlert
+  generatePlainEnglishAlert,
+  sendAlert,
+  notificationDispatcher
 };

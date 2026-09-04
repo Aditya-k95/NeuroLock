@@ -1,14 +1,13 @@
 import React from 'react';
+import { UserProvider } from './context/UserContext';
 import Dashboard from './pages/Dashboard';
-import { LanguageProvider } from './context/LanguageContext';
 
 export default function App() {
   return (
-    <LanguageProvider>
+    <UserProvider>
       <div className="min-h-screen bg-pitch-950">
         <Dashboard />
       </div>
-    </LanguageProvider>
+    </UserProvider>
   );
 }
-
