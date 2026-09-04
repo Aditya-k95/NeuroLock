@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Navbar from '../components/Navbar';
 import MetricsGrid from '../components/MetricsGrid';
+import TrafficTrendChart from '../components/TrafficTrendChart';
 import TrafficChart from '../components/TrafficChart';
 import LiveAlertFeed from '../components/LiveAlertFeed';
 import SimulateAttackModal from '../components/SimulateAttackModal';
@@ -263,7 +264,10 @@ export default function Dashboard() {
           parsingRate="480 ev/s"
         />
 
-        {/* 2. Interactive Charts & Ingestion Timeline */}
+        {/* 2. Historical Threat Severity Trend (7D / 30D Rolling Posture) */}
+        <TrafficTrendChart />
+
+        {/* 3. Interactive Real-Time Charts & Ingestion Timeline */}
         <TrafficChart anomalyEventCount={spikeTriggerCount} />
 
         {/* 3. Live Zero-Jargon Plain-English Incident Feed */}
