@@ -177,18 +177,7 @@ export const checkUnrecognizedDevice = (event, config = DEFAULT_RULE_CONFIG.unre
  * byte volume that far exceeds regular API transactional usage.
  */
 export const checkAbnormalDataTransfer = (event, config = DEFAULT_RULE_CONFIG.abnormalDataTransfer) => {
-  let bytes = 0;
-  if (typeof event.outboundBytes === 'number') {
-    bytes = event.outboundBytes;
-  } else if (typeof event.dataTransferMb === 'number') {
-    bytes = event.dataTransferMb * 1024 * 1024;
-  } else if (typeof event.bytesTransferred === 'number') {
-    bytes = event.bytesTransferred;
-  } else if (typeof event.eventData?.outboundBytes === 'number') {
-    bytes = event.eventData.outboundBytes;
-  } else if (typeof event.eventData?.dataTransferMb === 'number') {
-    bytes = event.eventData.dataTransferMb * 1024 * 1024;
-  }
+  const bytes = event.outboundBytes ?? event.bytesTransferred ?? event.eventData?.outboundBytes ?? 0;
 
   if (bytes >= config.criticalThresholdBytes) {
     const mb = (bytes / (1024 * 1024)).toFixed(1);
@@ -207,31 +196,6 @@ export const checkAbnormalDataTransfer = (event, config = DEFAULT_RULE_CONFIG.ab
       ruleId: 'ABNORMAL_DATA_TRANSFER',
       score: config.warningScore,
       reason: `Elevated data transfer volume detected: ${mb} MB outbound (threshold: ${(config.warningThresholdBytes / (1024 * 1024)).toFixed(0)} MB).`
-    };
-  }
-
-  return { triggered: false, score: 0 };
-};
-
-/**
- * Rule 6: Ransomware-Like Behavioral Indicators
- * Why this rule exists:
- * Rapid mass file modifications, renaming to locked extensions, and entropy spikes
- * indicate automated endpoint ransomware operations.
- */
-export const checkRansomwareBehavior = (event) => {
-  const filesMod = Number(event.filesModified ?? event.eventData?.filesModified ?? 0);
-  const filesRenamed = Number(event.filesRenamed ?? event.eventData?.filesRenamed ?? 0);
-  const encryptionLike = Boolean(event.encryptionLikeActivity ?? event.eventData?.encryptionLikeActivity ?? false);
-  const vssDeletion = Boolean(event.eventData?.volumeShadowCopyDeletionAttempted ?? false);
-
-  if (encryptionLike || filesMod >= 100 || filesRenamed >= 100 || vssDeletion) {
-    const isSevere = filesMod >= 500 || vssDeletion;
-    return {
-      triggered: true,
-      ruleId: 'RANSOMWARE_BEHAVIOR_SPIKE',
-      score: isSevere ? 65 : 45,
-      reason: `Ransomware behavioral heuristics triggered: ${filesMod} files modified, ${filesRenamed} files renamed, encryption pattern detected.`
     };
   }
 
@@ -259,8 +223,7 @@ export const evaluateRules = (event = {}, customConfig = {}) => {
     () => checkSuspiciousTime(event, config.suspiciousTime),
     () => checkUnrecognizedIp(event, config.unrecognizedIp),
     () => checkUnrecognizedDevice(event, config.unrecognizedDevice),
-    () => checkAbnormalDataTransfer(event, config.abnormalDataTransfer),
-    () => checkRansomwareBehavior(event)
+    () => checkAbnormalDataTransfer(event, config.abnormalDataTransfer)
   ];
 
   for (const checker of ruleCheckers) {

@@ -104,22 +104,6 @@ export const normalizeSecurityEvent = (rawEvent = {}) => {
     false
   );
 
-  const filesModified = Math.max(
-    0,
-    Number(rawEvent.filesModified ?? rawEvent.eventData?.filesModified ?? 0)
-  );
-
-  const filesRenamed = Math.max(
-    0,
-    Number(rawEvent.filesRenamed ?? rawEvent.eventData?.filesRenamed ?? 0)
-  );
-
-  const encryptionLikeActivity = Boolean(
-    rawEvent.encryptionLikeActivity ??
-    rawEvent.eventData?.encryptionLikeActivity ??
-    false
-  );
-
   // User baseline metadata
   const userBaseline = {
     knownIps: Array.isArray(rawEvent.userBaseline?.knownIps)
@@ -143,11 +127,7 @@ export const normalizeSecurityEvent = (rawEvent = {}) => {
     failedLoginCount: failedAttempts,
     timeWindowSeconds,
     dataTransferMb,
-    outboundBytes: dataTransferMb * 1024 * 1024,
     filesAccessed,
-    filesModified,
-    filesRenamed,
-    encryptionLikeActivity,
     requestRate,
     unusualProcessActivity,
     isSuccess: Boolean(rawEvent.isSuccess ?? (failedAttempts === 0)),

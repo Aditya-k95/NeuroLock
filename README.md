@@ -1,7 +1,7 @@
 # 🛡️ NeuroLock
 
 > **Intelligent Real-Time Anomaly Detection & Zero-Jargon Threat Communication**  
-> *Built for the **Build with भारत 2.0 National Hackathon** by Team **PARADOX***
+> *Built for the **NEXHACK 2.0** by Team **WOLFPACK SQUADRON***
 
 ---
 
@@ -147,7 +147,7 @@ To maintain high development velocity during the hackathon and avoid Git merge c
 
 ## 🗺️ Product Roadmap
 
-### 🟢 Phase 1: MVP Scope (*Build with भारत 2.0 Hackathon*)
+### 🟢 Phase 1: MVP Scope (*NEXHACK 2.0 Hackathon*)
 - [x] Real-time login anomaly detection (Brute force, rapid bursts, impossible travel).
 - [x] High-throughput Node.js/Express telemetry ingestion.
 - [x] LLM Contextual Intelligence Engine for zero-jargon plain-English translation.
@@ -181,6 +181,6 @@ For complete environment configuration, database seeding, and attack simulation 
 
 ---
 
-## 🏆 Team PARADOX
-Crafted with passion for **Build with भारत 2.0 National Hackathon**.  
+## 🏆 Team WOLFPACK SQUADRON
+Crafted with passion for ** NEXHACK 2.0 Hackathon**.  
 *Democratizing cybersecurity intelligence through intelligent, zero-jargon automation.*

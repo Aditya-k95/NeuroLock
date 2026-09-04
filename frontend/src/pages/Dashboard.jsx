@@ -1,64 +1,16 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import Navbar from '../components/Navbar';
 import MetricsGrid from '../components/MetricsGrid';
 import TrafficChart from '../components/TrafficChart';
 import LiveAlertFeed from '../components/LiveAlertFeed';
 import SimulateAttackModal from '../components/SimulateAttackModal';
 import WhatsAppPipelineModal from '../components/WhatsAppPipelineModal';
-import { Sparkles, Smartphone, CheckCircle2, MessageSquare, ExternalLink, X, RefreshCw } from 'lucide-react';
-import { getMetrics, getAlerts, updateAlertStatus, simulateAttack } from '../services/api';
-import { onNewAlert, onAlertUpdated, onTelemetryStream } from '../services/socket';
-
-/**
- * Format relative time string from ISO timestamp
- */
-const formatTimeAgo = (dateInput) => {
-  if (!dateInput) return 'Just now';
-  const d = new Date(dateInput);
-  if (isNaN(d.getTime())) return 'Just now';
-  const diffMs = Date.now() - d.getTime();
-  const diffSec = Math.floor(diffMs / 1000);
-  if (diffSec < 60) return 'Just now';
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHours = Math.floor(diffMin / 60);
-  if (diffHours < 24) return `${diffHours}h ago`;
-  return `${Math.floor(diffHours / 24)}d ago`;
-};
-
-/**
- * Normalize backend Alert document to the feed's expected structure
- */
-const formatAlertForUI = (alert) => {
-  return {
-    id: alert._id || alert.id || `ALT-${Math.floor(1000 + Math.random() * 9000)}`,
-    riskLevel: alert.severity || alert.riskLevel || 'MEDIUM',
-    userEmail: alert.username || alert.userEmail || 'unknown@enterprise.in',
-    plainEnglishSummary:
-      alert.explanation ||
-      alert.plainEnglishSummary ||
-      'Security deviation detected across authentication streams.',
-    recommendedAction: alert.recommendedAction || 'Review activity and verify credentials',
-    timeAgo: formatTimeAgo(alert.timestamp || alert.createdAt),
-    isResolved: alert.status === 'RESOLVED' || alert.isResolved === true,
-    dispatchedToWhatsApp: alert.dispatchedToWhatsApp !== undefined ? alert.dispatchedToWhatsApp : true,
-    rawTelemetry: alert.eventData || alert.rawTelemetry || {
-      sourceIp: alert.sourceIp,
-      destinationIp: alert.destinationIp,
-      deviceId: alert.deviceId,
-      riskScore: alert.riskScore,
-      anomalyScore: alert.anomalyScore,
-      ruleScore: alert.ruleScore,
-      timestamp: alert.timestamp
-    }
-  };
-};
+import { Sparkles, Smartphone, CheckCircle2, MessageSquare, ExternalLink, X } from 'lucide-react';
 
 export default function Dashboard() {
   const [isSimulatorOpen, setIsSimulatorOpen] = useState(false);
   const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
-  const [isLoadingAlerts, setIsLoadingAlerts] = useState(false);
-
+  
   // Persistent or default target phone number
   const [whatsAppNumber, setWhatsAppNumber] = useState(() => {
     return localStorage.getItem('neurolock_whatsapp_number') || '+91 98765 43210';
@@ -78,8 +30,7 @@ export default function Dashboard() {
       id: 'ALT-9041',
       riskLevel: 'CRITICAL',
       userEmail: 'sarah.jenkins@fintech.in',
-      plainEnglishSummary:
-        'Someone located in Frankfurt, Germany attempted to enter your password 14 times within 12 seconds. Because this fits an automated credential-guessing attack pattern, we flagged this incident for immediate isolation.',
+      plainEnglishSummary: 'Someone located in Frankfurt, Germany attempted to enter your password 14 times within 12 seconds. Because this fits an automated credential-guessing attack pattern, we flagged this incident for immediate isolation.',
       recommendedAction: 'Lock account and invalidate active sessions',
       timeAgo: '1 min ago',
       isResolved: false,
@@ -98,8 +49,7 @@ export default function Dashboard() {
       id: 'ALT-9040',
       riskLevel: 'HIGH',
       userEmail: 'rohit.mehta@enterprise.in',
-      plainEnglishSummary:
-        'We detected a successful login from Mumbai, followed 3 minutes later by another login attempt from London, UK. It is physically impossible to travel 4,400 miles in 3 minutes, suggesting someone else may possess Rohit\'s credentials.',
+      plainEnglishSummary: 'We detected a successful login from Mumbai, followed 3 minutes later by another login attempt from London, UK. It is physically impossible to travel 4,400 miles in 3 minutes, suggesting someone else may possess Rohit\'s credentials.',
       recommendedAction: 'Trigger multi-factor re-authentication',
       timeAgo: '6 mins ago',
       isResolved: false,
@@ -118,8 +68,7 @@ export default function Dashboard() {
       id: 'ALT-9038',
       riskLevel: 'MEDIUM',
       userEmail: 'dev.ops@cloudcorp.in',
-      plainEnglishSummary:
-        'A login request was made using a headless automated script on an unapproved cloud server rather than a normal web browser.',
+      plainEnglishSummary: 'A login request was made using a headless automated script on an unapproved cloud server rather than a normal web browser.',
       recommendedAction: 'Verify if scheduled CI/CD pipeline bot',
       timeAgo: '24 mins ago',
       isResolved: true,
@@ -132,118 +81,6 @@ export default function Dashboard() {
       }
     }
   ]);
-
-  /**
-   * Fetch live metrics from backend API
-   */
-  const fetchMetricsData = useCallback(async () => {
-    try {
-      const data = await getMetrics();
-      if (data && data.success) {
-        if (data.totalAlerts !== undefined) {
-          setAnomaliesFlagged(data.totalAlerts);
-        }
-        if (data.criticalAlerts > 0) {
-          setThreatLevel('CRITICAL');
-        } else if (data.highAlerts > 0) {
-          setThreatLevel('HIGH');
-        } else if (data.mediumAlerts > 0) {
-          setThreatLevel('MEDIUM');
-        } else if (data.totalAlerts === 0) {
-          setThreatLevel('LOW');
-        }
-      }
-    } catch (err) {
-      console.warn('[Dashboard] Metrics API notice:', err.message);
-    }
-  }, []);
-
-  /**
-   * Fetch live alert list from backend API
-   */
-  const fetchAlertsData = useCallback(async () => {
-    setIsLoadingAlerts(true);
-    try {
-      const res = await getAlerts({ limit: 20 });
-      if (res && res.success && Array.isArray(res.data) && res.data.length > 0) {
-        const mapped = res.data.map(formatAlertForUI);
-        setAlerts(mapped);
-      }
-    } catch (err) {
-      console.warn('[Dashboard] Alerts API notice (retaining baseline):', err.message);
-    } finally {
-      setIsLoadingAlerts(false);
-    }
-  }, []);
-
-  // Initial load: Fetch metrics & alerts
-  useEffect(() => {
-    fetchMetricsData();
-    fetchAlertsData();
-  }, [fetchMetricsData, fetchAlertsData]);
-
-  /**
-   * Socket.io Real-Time Subscriptions Lifecycle
-   */
-  useEffect(() => {
-    // 1. Listen for new incoming alerts broadcasted via Socket.io
-    const unsubscribeNewAlert = onNewAlert((incomingAlert) => {
-      if (!incomingAlert) return;
-      const formatted = formatAlertForUI(incomingAlert);
-
-      setAlerts((prev) => {
-        // Prevent duplicate insertion if already in feed
-        const exists = prev.some(
-          (a) =>
-            a.id === formatted.id ||
-            (formatted.id && a.id === String(formatted.id)) ||
-            (a.id === formatted.id.toString?.())
-        );
-        if (exists) return prev;
-        return [formatted, ...prev];
-      });
-
-      // Update counters in real time
-      setAnomaliesFlagged((prev) => prev + 1);
-      setSpikeTriggerCount((prev) => prev + 1);
-      if (formatted.riskLevel === 'CRITICAL' || formatted.riskLevel === 'HIGH') {
-        setThreatLevel(formatted.riskLevel);
-      }
-
-      // Refresh metrics from server
-      fetchMetricsData();
-    });
-
-    // 2. Listen for alert status updates (remediation / resolution)
-    const unsubscribeAlertUpdated = onAlertUpdated((updatedAlert) => {
-      if (!updatedAlert) return;
-      const targetId = updatedAlert._id || updatedAlert.id;
-      setAlerts((prev) =>
-        prev.map((item) =>
-          item.id === targetId || item.id === String(targetId)
-            ? { ...item, isResolved: updatedAlert.status === 'RESOLVED' }
-            : item
-        )
-      );
-      fetchMetricsData();
-    });
-
-    // 3. Listen for raw telemetry heartbeat stream
-    const unsubscribeTelemetry = onTelemetryStream((telemetryEvent) => {
-      if (!telemetryEvent) return;
-      setTotalEvents((prev) => prev + (telemetryEvent.failedAttempts || 1));
-      if (telemetryEvent.failedAttempts > 4 || telemetryEvent.requestRate > 200) {
-        setSpikeTriggerCount((prev) => prev + 1);
-      }
-    });
-
-    // Cleanup all subscriptions on component unmount
-    return () => {
-      unsubscribeNewAlert();
-      unsubscribeAlertUpdated();
-      unsubscribeTelemetry();
-    };
-  }, [fetchMetricsData]);
 
   const handleSavePhoneNumber = (newNumber) => {
     setWhatsAppNumber(newNumber);
@@ -263,94 +100,60 @@ export default function Dashboard() {
     }, 6000);
   };
 
-  /**
-   * Handle attack injection from the Simulator via backend POST /api/simulate-attack
-   */
-  const handleTriggerAttack = async (scenario, dispatchToWA = true) => {
-    try {
-      // Call backend API
-      const result = await simulateAttack(scenario.id, {
-        dispatchToWhatsApp: dispatchToWA,
-        targetPhone: whatsAppNumber
-      });
+  // Handle attack injection from the Simulator
+  const handleTriggerAttack = (scenario, dispatchToWA = true) => {
+    setTotalEvents(prev => prev + (scenario.rawPayload.attempts || 12));
+    setAnomaliesFlagged(prev => prev + 1);
+    setThreatLevel('CRITICAL');
+    setSpikeTriggerCount(prev => prev + 1);
 
-      if (result && result.success) {
-        const newAlert = formatAlertForUI({
-          _id: result.alertId,
-          severity: result.severity,
-          username: result.event?.username || scenario.rawPayload?.targetUser || 'admin@bharatmsme.in',
-          explanation: result.explanation,
-          recommendedAction: result.recommendedAction,
-          timestamp: result.timestamp || new Date().toISOString(),
-          status: 'ACTIVE',
-          dispatchedToWhatsApp: dispatchToWA,
-          eventData: result.event?.eventData || scenario.rawPayload || {}
-        });
+    let plainEnglishText = '';
+    let recAction = '';
+    let risk = 'HIGH';
 
-        // Ensure alert is in feed (Socket.io may have already added it or will add it)
-        setAlerts((prev) => {
-          if (prev.some((a) => a.id === newAlert.id)) return prev;
-          return [newAlert, ...prev];
-        });
+    if (scenario.id === 'BRUTE_FORCE') {
+      risk = 'CRITICAL';
+      plainEnglishText = `⚠️ Real-Time Alert: Someone at IP ${scenario.rawPayload.ipAddress} attempted ${scenario.rawPayload.attempts} rapid password guesses in ${scenario.rawPayload.timeDeltaSeconds} seconds against ${scenario.rawPayload.targetUser}. We recommend locking this account immediately.`;
+      recAction = 'Lock Account & Force Password Reset';
+    } else if (scenario.id === 'IMPOSSIBLE_TRAVEL') {
+      risk = 'CRITICAL';
+      plainEnglishText = `⚠️ Impossible Travel Detected: Login logged for ${scenario.rawPayload.targetUser} in ${scenario.rawPayload.origin}, then another attempt in ${scenario.rawPayload.destination} just ${scenario.rawPayload.timeDeltaMinutes} minutes later (speed: ${scenario.rawPayload.calculatedSpeedKmH} km/h).`;
+      recAction = 'Enforce Biometric Step-Up Auth';
+    } else {
+      risk = 'MEDIUM';
+      plainEnglishText = `⚠️ Unusual Device Signature: An unverified headless agent attempted to authenticate as ${scenario.rawPayload.targetUser} at ${scenario.rawPayload.timeOfDay}.`;
+      recAction = 'Quarantine IP & Invalidate Session';
+    }
 
-        setTotalEvents((prev) => prev + (result.event?.failedAttempts || 14));
-        setAnomaliesFlagged((prev) => prev + 1);
-        setThreatLevel(result.severity || 'CRITICAL');
-        setSpikeTriggerCount((prev) => prev + 1);
+    const newAlert = {
+      id: `ALT-${Math.floor(1000 + Math.random() * 9000)}`,
+      riskLevel: risk,
+      userEmail: scenario.rawPayload.targetUser,
+      plainEnglishSummary: plainEnglishText,
+      recommendedAction: recAction,
+      timeAgo: 'Just now',
+      isResolved: false,
+      dispatchedToWhatsApp: dispatchToWA,
+      rawTelemetry: scenario.rawPayload
+    };
 
-        // Refresh metrics
-        fetchMetricsData();
+    setAlerts(prev => [newAlert, ...prev]);
 
-        if (dispatchToWA) {
-          showToast(
-            'WhatsApp Zero-Jargon Alert Dispatched',
-            `Transmitted plain-English security summary to ${whatsAppNumber}`,
-            true
-          );
-        } else {
-          showToast(
-            'Threat Vector Injected',
-            `Evaluated "${scenario.title || result.alertType}" through detection pipeline`,
-            false
-          );
-        }
-      }
-    } catch (err) {
-      console.error('[Dashboard] Attack simulation error:', err);
-      // Fallback local simulation if backend is unreachable
-      setTotalEvents((prev) => prev + (scenario.rawPayload?.attempts || 12));
-      setAnomaliesFlagged((prev) => prev + 1);
-      setThreatLevel('CRITICAL');
-      setSpikeTriggerCount((prev) => prev + 1);
-
+    if (dispatchToWA) {
       showToast(
-        'Simulation Offline Mode',
-        `Evaluated locally: ${err.message}`,
-        false
+        'WhatsApp Zero-Jargon Alert Dispatched',
+        `Transmitted plain-English security summary to ${whatsAppNumber}`,
+        true
       );
     }
   };
 
-  /**
-   * Resolve an alert with 1-click mitigation
-   */
-  const handleResolveAlert = async (alertId, actionType) => {
-    // Optimistic UI update
-    setAlerts((prev) =>
-      prev.map((item) =>
+  const handleResolveAlert = (alertId, actionType) => {
+    setAlerts(prev =>
+      prev.map(item =>
         item.id === alertId ? { ...item, isResolved: true } : item
       )
     );
-
-    try {
-      if (alertId && !alertId.startsWith('ALT-')) {
-        await updateAlertStatus(alertId, 'RESOLVED');
-      }
-      fetchMetricsData();
-    } catch (err) {
-      console.warn('[Dashboard] Could not update alert status on server:', err.message);
-    }
-
     showToast(
       'Account Remediated',
       `Applied mitigation policy (${actionType}) and updated telemetry state.`,
@@ -378,11 +181,7 @@ export default function Dashboard() {
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-3">
               <div className="p-2 rounded-xl bg-sand-500/20 text-sand-300 border border-sand-500/40 shrink-0">
-                {toastNotification.isWhatsApp ? (
-                  <Smartphone className="w-5 h-5" />
-                ) : (
-                  <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                )}
+                {toastNotification.isWhatsApp ? <Smartphone className="w-5 h-5" /> : <CheckCircle2 className="w-5 h-5 text-emerald-400" />}
               </div>
               <div>
                 <div className="flex items-center gap-2">
@@ -471,7 +270,6 @@ export default function Dashboard() {
         <LiveAlertFeed
           alerts={alerts}
           onResolveAlert={handleResolveAlert}
-          isLoading={isLoadingAlerts}
         />
 
       </main>

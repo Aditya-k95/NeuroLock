@@ -8,10 +8,8 @@
     "dev:frontend": "npm --prefix frontend run dev",
     "dev": "concurrently -n \"BACKEND,FRONTEND\" -c \"cyan,magenta\" \"npm run dev:backend\" \"npm run dev:frontend\"",
     "build:frontend": "npm --prefix frontend run build",
-    "start": "npm --prefix backend start",
-    "demo": "node demo/trafficSimulator.js"
+    "start": "npm --prefix backend start"
   },
-  "type": "module",
   "devDependencies": {
     "concurrently": "^8.2.2"
   },
