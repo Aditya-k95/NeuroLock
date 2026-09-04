@@ -112,7 +112,13 @@ export const normalizeSecurityEvent = (rawEvent = {}) => {
     knownDevices: Array.isArray(rawEvent.userBaseline?.knownDevices)
       ? rawEvent.userBaseline.knownDevices
       : [],
-    usualHours: rawEvent.userBaseline?.usualHours || { start: 6, end: 22 }
+    ipSubnets: Array.isArray(rawEvent.userBaseline?.ipSubnets)
+      ? rawEvent.userBaseline.ipSubnets
+      : [],
+    usualHours: rawEvent.userBaseline?.usualHours || { start: 6, end: 22 },
+    hourlyFrequency: rawEvent.userBaseline?.hourlyFrequency || rawEvent.userBaseline?.typicalHours?.hourlyFrequency,
+    totalLogins: rawEvent.userBaseline?.totalLogins || 0,
+    ...rawEvent.userBaseline
   };
 
   return {
@@ -126,8 +132,12 @@ export const normalizeSecurityEvent = (rawEvent = {}) => {
     failedAttempts,
     failedLoginCount: failedAttempts,
     timeWindowSeconds,
+    outboundBytes: typeof rawEvent.outboundBytes === 'number' ? rawEvent.outboundBytes : dataTransferMb * 1024 * 1024,
     dataTransferMb,
     filesAccessed,
+    filePath: rawEvent.filePath || rawEvent.targetFile || '',
+    accessedFiles: Array.isArray(rawEvent.accessedFiles) ? rawEvent.accessedFiles : [],
+    hasSensitiveFileAccess: Boolean(rawEvent.hasSensitiveFileAccess ?? rawEvent.eventData?.hasSensitiveFileAccess ?? false),
     requestRate,
     unusualProcessActivity,
     isSuccess: Boolean(rawEvent.isSuccess ?? (failedAttempts === 0)),

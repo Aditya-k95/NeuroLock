@@ -1,7 +1,11 @@
 {
   "name": "neurolock-workspace",
   "version": "1.0.0",
+<<<<<<< HEAD
   "description": "NeuroLock - Real-time Login/Traffic Anomaly Detection & Zero-Jargon Threat Communication (NexHack 2.0 National Hackathon - WolfPack Squadron)",
+=======
+  "description": "NeuroLock - Real-time Login/Traffic Anomaly Detection & Zero-Jargon Threat Communication (NexHack 2.0 | Team Wolfpack Squadron)",
+>>>>>>> a22cdc2df7150d5a3d486687a3f133c0b24468c2
   "scripts": {
     "install:all": "npm install && npm --prefix frontend install && npm --prefix backend install",
     "dev:backend": "npm --prefix backend run dev",
@@ -13,6 +17,6 @@
   "devDependencies": {
     "concurrently": "^8.2.2"
   },
-  "author": "Team WolfPack Squadron",
+  "author": "Team PARADOX",
   "license": "MIT"
 }
