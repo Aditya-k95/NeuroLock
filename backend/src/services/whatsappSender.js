@@ -13,8 +13,12 @@
  */
 export const sendWhatsAppAlert = async (recipientNumber, alertData) => {
   // Placeholder stub: Will be wired up with Twilio / WhatsApp API in notification phase
+  const messageText = typeof alertData === 'string'
+    ? alertData
+    : (alertData?.plainEnglishSummary || alertData?.summary || alertData?.text || 'Security Alert');
+
   console.log(
-    `[WhatsApp Service Placeholder] Dispatched alert to ${recipientNumber}: "${alertData?.plainEnglishSummary || 'Security Alert'}"`
+    `[WhatsApp Service Placeholder] Dispatched alert to ${recipientNumber}: "${messageText}"`
   );
 
   return {
@@ -23,6 +27,9 @@ export const sendWhatsAppAlert = async (recipientNumber, alertData) => {
   };
 };
 
+export const send = sendWhatsAppAlert;
+
 export default {
+  send,
   sendWhatsAppAlert
 };

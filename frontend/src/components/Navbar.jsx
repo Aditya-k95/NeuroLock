@@ -1,7 +1,23 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Zap, Wifi, Clock, Sparkles, Bell, ChevronDown, User, CheckCircle2, Smartphone, Flame, Trash2 } from 'lucide-react';
+import {
+  Search,
+  Zap,
+  Wifi,
+  Clock,
+  Sparkles,
+  Bell,
+  ChevronDown,
+  User,
+  CheckCircle2,
+  Smartphone,
+  Flame,
+  Trash2,
+  UserCheck,
+  Shield
+} from 'lucide-react';
 import CyberLogo from './CyberLogo';
 import LanguageSelector from './LanguageSelector';
+import RoleGuard, { useUser } from './RoleGuard';
 import { useLanguage } from '../context/LanguageContext';
 
 export default function Navbar({
@@ -17,15 +33,20 @@ export default function Navbar({
   isLive = true
 }) {
   const { t } = useLanguage();
-  const [time, setTime] = useState(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+  const { role, toggleRole, user } = useUser();
+  const [time, setTime] = useState(
+    new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  );
   const [latency, setLatency] = useState(24);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const notifRef = useRef(null);
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-      setLatency(prev => Math.max(18, Math.min(32, prev + (Math.random() > 0.5 ? 1 : -1))));
+      setTime(
+        new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      );
+      setLatency((prev) => Math.max(18, Math.min(32, prev + (Math.random() > 0.5 ? 1 : -1))));
     }, 1000);
     return () => clearInterval(timer);
   }, []);
@@ -49,6 +70,9 @@ export default function Navbar({
     }
     return str.slice(0, 2).toUpperCase();
   };
+
+  const displayName = user?.name || userName || 'User';
+  const displayRole = (role === 'owner' ? 'Owner / Admin' : 'Staff Analyst') || userRole;
 
   return (
     <header className="sticky top-0 z-30 bg-[#0d0a14]/90 backdrop-blur-xl border-b border-[#1f1a33]/60 px-4 sm:px-6 lg:px-8 py-3.5 transition-all">
@@ -130,9 +154,24 @@ export default function Navbar({
 
         </div>
 
-        {/* Right Actions: Language Selector + Notifications + Simulator + User Profile */}
+        {/* Right Actions: Role Toggle + Language Selector + Notifications + Simulator + User Profile */}
         <div className="flex items-center gap-2.5 sm:gap-3">
           
+          {/* Role Switcher Pill (Owner / Staff) */}
+          <button
+            id="role-toggle-btn"
+            onClick={toggleRole}
+            title="Click to toggle between Owner (full view + simulator) and Staff (scoped view)"
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-xl border transition-all ${
+              role === 'owner'
+                ? 'bg-purple-500/15 text-purple-300 border-purple-500/40 hover:bg-purple-500/25 shadow-sm'
+                : 'bg-cyan-500/15 text-cyan-300 border-cyan-500/40 hover:bg-cyan-500/25 shadow-sm'
+            }`}
+          >
+            <UserCheck className="w-3.5 h-3.5" />
+            <span className="font-bold uppercase tracking-wider">{role === 'owner' ? '👑 OWNER' : '👤 STAFF'}</span>
+          </button>
+
           {/* Top-Right Language Converter Dropdown */}
           <LanguageSelector />
 
@@ -186,7 +225,11 @@ export default function Navbar({
                       >
                         <div className="flex items-center justify-between mb-1">
                           <span className="font-bold text-white text-[11px] flex items-center gap-1.5">
-                            {notif.isWhatsApp ? <Smartphone className="w-3 h-3 text-emerald-400" /> : <CheckCircle2 className="w-3 h-3 text-purple-400" />}
+                            {notif.isWhatsApp ? (
+                              <Smartphone className="w-3 h-3 text-emerald-400" />
+                            ) : (
+                              <CheckCircle2 className="w-3 h-3 text-purple-400" />
+                            )}
                             {notif.title}
                           </span>
                           <span className="text-[10px] text-slate-500 font-mono">{notif.timestamp}</span>
@@ -202,16 +245,18 @@ export default function Navbar({
             )}
           </div>
 
-          {/* Attack Simulator Action Button */}
-          <button
-            id="simulate-attack-btn"
-            onClick={onOpenSimulator}
-            className="flex items-center gap-2 px-3.5 py-2 text-xs font-bold rounded-xl bg-gradient-to-r from-purple-600 to-violet-500 text-white hover:from-purple-500 hover:to-violet-400 shadow-[0_0_15px_rgba(139,92,246,0.35)] hover:shadow-[0_0_20px_rgba(139,92,246,0.5)] transition-all duration-200 active:scale-95"
-          >
-            <Zap className="w-3.5 h-3.5 text-yellow-300" />
-            <span className="hidden sm:inline">{t('simulateAttack', 'Simulate Attack')}</span>
-            <span className="sm:hidden">Simulate</span>
-          </button>
+          {/* Attack Simulator Action Button (Protected by RoleGuard for Owner) */}
+          <RoleGuard allowedRoles={['owner']}>
+            <button
+              id="simulate-attack-btn"
+              onClick={onOpenSimulator}
+              className="flex items-center gap-2 px-3.5 py-2 text-xs font-bold rounded-xl bg-gradient-to-r from-purple-600 to-violet-500 text-white hover:from-purple-500 hover:to-violet-400 shadow-[0_0_15px_rgba(139,92,246,0.35)] hover:shadow-[0_0_20px_rgba(139,92,246,0.5)] transition-all duration-200 active:scale-95"
+            >
+              <Zap className="w-3.5 h-3.5 text-yellow-300" />
+              <span className="hidden sm:inline">{t('simulateAttack', 'Simulate Attack')}</span>
+              <span className="sm:hidden">Simulate</span>
+            </button>
+          </RoleGuard>
 
           {/* User Profile Avatar with Edit Modal Trigger */}
           <button
@@ -223,7 +268,7 @@ export default function Navbar({
               <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-purple-600 via-pink-500 to-amber-400 p-[1.5px] shadow-sm">
                 <div className="w-full h-full bg-[#151220] rounded-[10px] flex items-center justify-center overflow-hidden">
                   <span className="text-xs font-extrabold text-white bg-clip-text text-transparent bg-gradient-to-r from-purple-300 to-yellow-300">
-                    {getInitials(userName)}
+                    {getInitials(displayName)}
                   </span>
                 </div>
               </div>
@@ -232,10 +277,10 @@ export default function Navbar({
 
             <div className="hidden xl:block">
               <div className="text-xs font-bold text-white leading-tight flex items-center gap-1 group-hover:text-purple-300 transition-colors">
-                <span>{userName}</span>
+                <span>{displayName}</span>
                 <ChevronDown className="w-3 h-3 text-slate-400 group-hover:text-purple-300" />
               </div>
-              <div className="text-[10px] text-slate-400 leading-tight">{userRole}</div>
+              <div className="text-[10px] text-slate-400 leading-tight">{displayRole}</div>
             </div>
           </button>
 
@@ -245,7 +290,3 @@ export default function Navbar({
     </header>
   );
 }
-
-
-
-

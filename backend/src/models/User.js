@@ -36,11 +36,12 @@ const userSchema = new mongoose.Schema(
     role: {
       type: String,
       enum: {
-        values: ['ADMIN', 'SECURITY_OFFICER', 'ANALYST', 'USER'],
+        values: ['owner', 'staff'],
         message: '{VALUE} is not a supported role'
       },
-      default: 'ADMIN',
-      uppercase: true
+      default: 'owner',
+      lowercase: true,
+      trim: true
     }
   },
   {

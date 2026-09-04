@@ -12,6 +12,7 @@ import AuditLogsModal from '../components/AuditLogsModal';
 import EngineSettingsModal from '../components/EngineSettingsModal';
 import NotificationToast from '../components/NotificationToast';
 import ThreatDistributionChart from '../components/ThreatDistributionChart';
+import RoleGuard, { useUser } from '../components/RoleGuard';
 import { useLanguage } from '../context/LanguageContext';
 import {
   Sparkles,
@@ -28,11 +29,13 @@ import {
   Activity,
   ShieldAlert,
   Sliders,
-  TrendingUp
+  TrendingUp,
+  Shield
 } from 'lucide-react';
 
 export default function Dashboard() {
   const { t } = useLanguage();
+  const { user, role, setUser } = useUser();
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isSimulatorOpen, setIsSimulatorOpen] = useState(false);
   const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState(false);
@@ -42,12 +45,10 @@ export default function Dashboard() {
 
   // Dynamic User Profile State (persisted to localStorage)
   const [userName, setUserName] = useState(() => {
-    const saved = localStorage.getItem('neurolock_user_name');
-    if (!saved || saved === 'Aditya') return 'User';
-    return saved;
+    return localStorage.getItem('neurolock_user_name') || user?.name || 'User';
   });
   const [userRole, setUserRole] = useState(() => {
-    return localStorage.getItem('neurolock_user_role') || 'SecOps Lead';
+    return localStorage.getItem('neurolock_user_role') || user?.role || 'SecOps Lead';
   });
 
   // Search Query State for live incident search
@@ -165,14 +166,21 @@ export default function Dashboard() {
     setNotificationsHistory(prev => [newNotif, ...prev]);
   };
 
-  const handleSaveProfile = ({ name, role }) => {
+  const handleSaveProfile = ({ name, role: newRole }) => {
     setUserName(name);
-    setUserRole(role);
+    setUserRole(newRole);
     localStorage.setItem('neurolock_user_name', name);
-    localStorage.setItem('neurolock_user_role', role);
+    localStorage.setItem('neurolock_user_role', newRole);
+    if (setUser) {
+      setUser(prev => ({
+        ...prev,
+        name,
+        role: newRole.toLowerCase().includes('staff') ? 'staff' : (prev?.role || 'owner')
+      }));
+    }
     showToast(
       'Operator Profile Updated',
-      `Welcome, ${name} (${role}). Radar credentials synchronized.`,
+      `Welcome, ${name} (${newRole}). Radar credentials synchronized.`,
       false,
       'PROFILE'
     );
@@ -252,8 +260,13 @@ export default function Dashboard() {
     );
   };
 
+  // Scoped alerts based on Role (Staff vs Owner)
+  const roleScopedAlerts = role === 'staff'
+    ? alerts.filter(a => a.userEmail === user?.email || a.id === 'ALT-9041')
+    : alerts;
+
   // Filter alerts by search query
-  const filteredAlerts = alerts.filter(alert => {
+  const filteredAlerts = roleScopedAlerts.filter(alert => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
     return (
@@ -267,7 +280,7 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-[#0d0a14] text-slate-100 flex flex-row selection:bg-purple-600 selection:text-white relative font-sans">
       
-      {/* 1. Slim Icon-Only Sidebar on the far left (~70px wide) */}
+      {/* 1. Slim Icon-Only Sidebar on the far left (~72px wide) */}
       <Sidebar
         activeTab={activeTab}
         onSelectTab={setActiveTab}
@@ -275,7 +288,7 @@ export default function Dashboard() {
         onOpenWhatsApp={() => setIsWhatsAppModalOpen(true)}
         onOpenAuditLogs={() => setIsAuditLogsOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
-        alertCount={alerts.filter(a => !a.isResolved).length}
+        alertCount={filteredAlerts.filter(a => !a.isResolved).length}
       />
 
       {/* 2. Main Body Container with Top Header */}
@@ -293,7 +306,7 @@ export default function Dashboard() {
           notifications={notificationsHistory}
           onClearNotifications={() => setNotificationsHistory([])}
           isLive={true}
-          alertCount={alerts.filter(a => !a.isResolved).length}
+          alertCount={filteredAlerts.filter(a => !a.isResolved).length}
         />
 
         {/* Luxury Glassmorphic Floating Toast Notification */}
@@ -320,6 +333,15 @@ export default function Dashboard() {
                 <p className="text-sm text-slate-300 mt-1 max-w-2xl leading-relaxed">
                   Welcome back, <strong className="text-purple-300 font-bold">{userName}</strong> ({userRole}). Ingesting raw authentication streams, flagging behavioral anomalies, and delivering zero-jargon plain-English explanations directly to WhatsApp.
                 </p>
+
+                {role === 'staff' && (
+                  <div className="mt-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-cyan-950/70 border border-cyan-700/60 text-xs font-mono text-cyan-300">
+                    <Shield className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>
+                      Staff View Scoped: Displaying incidents assigned to <strong>{user?.name}</strong> ({user?.email})
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Quick WhatsApp Configuration Pill */}
@@ -373,7 +395,7 @@ export default function Dashboard() {
               }`}
             >
               <ShieldAlert className="w-4 h-4" />
-              <span>Threat Alerts ({alerts.filter(a => !a.isResolved).length})</span>
+              <span>Threat Alerts ({filteredAlerts.filter(a => !a.isResolved).length})</span>
             </button>
 
             <button
@@ -402,8 +424,9 @@ export default function Dashboard() {
           {activeTab === 'dashboard' && (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start animate-fadeIn">
               
-              {/* Wider Left Column (8 cols): Traffic Chart & Pipeline Insights */}
+              {/* Wider Left Column (8 cols): Traffic Trend & Real-time Chart & Health Card */}
               <div className="lg:col-span-7 xl:col-span-8 space-y-6">
+                <TrafficTrendChart />
                 <TrafficChart anomalyEventCount={spikeTriggerCount} />
 
                 {/* Stream Pipeline Health Card */}
@@ -444,7 +467,7 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                {/* 3. Threat Vector & Risk Distribution Pie/Donut Chart */}
+                {/* Threat Vector & Risk Distribution Pie/Donut Chart */}
                 <ThreatDistributionChart alerts={filteredAlerts} />
               </div>
 
@@ -499,13 +522,15 @@ export default function Dashboard() {
                         <span>{t('heroBtnTest', 'Test WhatsApp Alert')}</span>
                       </button>
 
-                      <button
-                        onClick={() => setIsSimulatorOpen(true)}
-                        className="flex items-center justify-center p-2.5 rounded-xl bg-white/20 hover:bg-white/30 text-white border border-white/30 backdrop-blur-md transition-all active:scale-95"
-                        title={t('heroBtnSim', 'Launch Attack Simulator')}
-                      >
-                        <Zap className="w-4 h-4 text-yellow-200" />
-                      </button>
+                      <RoleGuard allowedRoles={['owner']}>
+                        <button
+                          onClick={() => setIsSimulatorOpen(true)}
+                          className="flex items-center justify-center p-2.5 rounded-xl bg-white/20 hover:bg-white/30 text-white border border-white/30 backdrop-blur-md transition-all active:scale-95"
+                          title={t('heroBtnSim', 'Launch Attack Simulator')}
+                        >
+                          <Zap className="w-4 h-4 text-yellow-200" />
+                        </button>
+                      </RoleGuard>
                     </div>
                   </div>
                 </div>
@@ -528,13 +553,15 @@ export default function Dashboard() {
                       <p className="text-xs text-slate-400">Deep-dive incident analysis translated by LLM with 1-click credential revocation</p>
                     </div>
                   </div>
-                  <button
-                    onClick={() => setIsSimulatorOpen(true)}
-                    className="flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl bg-purple-600 text-white hover:bg-purple-500 transition-all shadow-md"
-                  >
-                    <Zap className="w-3.5 h-3.5 text-yellow-300" />
-                    <span>Inject Test Threat</span>
-                  </button>
+                  <RoleGuard allowedRoles={['owner']}>
+                    <button
+                      onClick={() => setIsSimulatorOpen(true)}
+                      className="flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl bg-purple-600 text-white hover:bg-purple-500 transition-all shadow-md"
+                    >
+                      <Zap className="w-3.5 h-3.5 text-yellow-300" />
+                      <span>Inject Test Threat</span>
+                    </button>
+                  </RoleGuard>
                 </div>
                 
                 <LiveAlertFeed
@@ -637,13 +664,15 @@ export default function Dashboard() {
         onSaveProfile={handleSaveProfile}
       />
 
-      {/* Attack Simulator Modal */}
-      <SimulateAttackModal
-        isOpen={isSimulatorOpen}
-        onClose={() => setIsSimulatorOpen(false)}
-        onTriggerAttack={handleTriggerAttack}
-        whatsAppNumber={whatsAppNumber}
-      />
+      {/* Attack Simulator Modal (Owner Protected) */}
+      <RoleGuard allowedRoles={['owner']}>
+        <SimulateAttackModal
+          isOpen={isSimulatorOpen}
+          onClose={() => setIsSimulatorOpen(false)}
+          onTriggerAttack={handleTriggerAttack}
+          whatsAppNumber={whatsAppNumber}
+        />
+      </RoleGuard>
 
       {/* WhatsApp Pipeline Modal */}
       <WhatsAppPipelineModal
@@ -657,5 +686,3 @@ export default function Dashboard() {
     </div>
   );
 }
-
-
