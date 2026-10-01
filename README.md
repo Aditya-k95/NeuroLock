@@ -1,7 +1,7 @@
 # 🛡️ NeuroLock
 
 > **Intelligent Real-Time Anomaly Detection & Zero-Jargon Threat Communication**  
-> *Built for the **NEXHACK 2.0** by Team **WOLFPACK SQUADRON***
+> *Built for the **MINI PROJECT 2026** 
 
 ---
 
@@ -182,5 +182,5 @@ For complete environment configuration, database seeding, and attack simulation 
 ---
 
 ## 🏆 Team WOLFPACK SQUADRON
-Crafted with passion for ** NEXHACK 2.0 Hackathon**.  
+Crafted with passion for **MINI PROJECT 2026**.  
 *Democratizing cybersecurity intelligence through intelligent, zero-jargon automation.*
