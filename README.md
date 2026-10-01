@@ -147,7 +147,7 @@ To maintain high development velocity during the hackathon and avoid Git merge c
 
 ## 🗺️ Product Roadmap
 
-### 🟢 Phase 1: MVP Scope (*NEXHACK 2.0 Hackathon*)
+### 🟢 Phase 1: MVP Scope
 - [x] Real-time login anomaly detection (Brute force, rapid bursts, impossible travel).
 - [x] High-throughput Node.js/Express telemetry ingestion.
 - [x] LLM Contextual Intelligence Engine for zero-jargon plain-English translation.
