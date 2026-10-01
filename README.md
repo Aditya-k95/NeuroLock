@@ -5,7 +5,7 @@
 
 ---
 
-## 📌 Problem Statement
+## 📌 Problem Statement 
 
 In today's interconnected digital landscape, cybersecurity breaches are surging, yet traditional Security Information and Event Management (SIEM) systems and anomaly detection platforms present severe operational bottlenecks for Small & Medium Businesses (SMBs), non-technical admins, and end-users:
 
