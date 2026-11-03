@@ -14,6 +14,7 @@ import NotificationToast from '../components/NotificationToast';
 import ThreatDistributionChart from '../components/ThreatDistributionChart';
 import RoleGuard, { useUser } from '../components/RoleGuard';
 import { useLanguage } from '../context/LanguageContext';
+import { getSocket } from '../services/socket';
 import {
   Sparkles,
   Smartphone,
@@ -32,6 +33,8 @@ import {
   TrendingUp,
   Shield
 } from 'lucide-react';
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 export default function Dashboard() {
   const { t } = useLanguage();
@@ -95,20 +98,26 @@ export default function Dashboard() {
   const [threatLevel, setThreatLevel] = useState('HIGH');
   const [spikeTriggerCount, setSpikeTriggerCount] = useState(0);
 
-  // Initial State: Plain-English Zero-Jargon Alerts
+  // Initial State: Fallback Demo Alerts
   const [alerts, setAlerts] = useState([
     {
       id: 'ALT-9041',
       riskLevel: 'CRITICAL',
+      severity: 'CRITICAL',
       userEmail: 'sarah.jenkins@fintech.in',
+      username: 'sarah.jenkins@fintech.in',
+      title: 'CRITICAL Risk: Credential Stuffing Burst',
       plainEnglishSummary: 'Someone located in Frankfurt, Germany attempted to enter your password 14 times within 12 seconds. Because this fits an automated credential-guessing attack pattern, we flagged this incident for immediate isolation.',
+      explanation: 'Someone located in Frankfurt, Germany attempted to enter your password 14 times within 12 seconds. Because this fits an automated credential-guessing attack pattern, we flagged this incident for immediate isolation.',
       recommendedAction: 'Lock account and invalidate active sessions',
       timeAgo: '1 min ago',
       isResolved: false,
-      dispatchedToWhatsApp: true,
+      status: 'ACTIVE',
+      dispatchedToWhatsApp: false,
       rawTelemetry: {
         timestamp: '2026-09-02T12:51:22.000Z',
         anomaly: 'AUTH_BURST_ATTACK',
+        eventType: 'AUTH_BURST_FAILURE',
         ipAddress: '185.220.101.5',
         asn: 'AS14061 (Tor Exit Node)',
         attempts: 14,
@@ -119,15 +128,21 @@ export default function Dashboard() {
     {
       id: 'ALT-9040',
       riskLevel: 'HIGH',
+      severity: 'HIGH',
       userEmail: 'rohit.mehta@enterprise.in',
+      username: 'rohit.mehta@enterprise.in',
+      title: 'HIGH Risk: Impossible Travel Anomaly',
       plainEnglishSummary: 'We detected a successful login from Mumbai, followed 3 minutes later by another login attempt from London, UK. It is physically impossible to travel 4,400 miles in 3 minutes, suggesting someone else may possess Rohit\'s credentials.',
+      explanation: 'We detected a successful login from Mumbai, followed 3 minutes later by another login attempt from London, UK. It is physically impossible to travel 4,400 miles in 3 minutes, suggesting someone else may possess Rohit\'s credentials.',
       recommendedAction: 'Trigger multi-factor re-authentication',
       timeAgo: '6 mins ago',
       isResolved: false,
-      dispatchedToWhatsApp: true,
+      status: 'ACTIVE',
+      dispatchedToWhatsApp: false,
       rawTelemetry: {
         timestamp: '2026-09-02T12:46:10.000Z',
         anomaly: 'IMPOSSIBLE_TRAVEL_VELOCITY',
+        eventType: 'GEO_IMPOSSIBLE_TRAVEL',
         originCity: 'Mumbai, India',
         targetCity: 'London, United Kingdom',
         distanceMiles: 4480,
@@ -138,20 +153,98 @@ export default function Dashboard() {
     {
       id: 'ALT-9038',
       riskLevel: 'MEDIUM',
+      severity: 'MEDIUM',
       userEmail: 'dev.ops@cloudcorp.in',
+      username: 'dev.ops@cloudcorp.in',
+      title: 'MEDIUM Risk: Unrecognized Headless Agent',
       plainEnglishSummary: 'A login request was made using a headless automated script on an unapproved cloud server rather than a normal web browser.',
+      explanation: 'A login request was made using a headless automated script on an unapproved cloud server rather than a normal web browser.',
       recommendedAction: 'Verify if scheduled CI/CD pipeline bot',
       timeAgo: '24 mins ago',
       isResolved: true,
+      status: 'RESOLVED',
       dispatchedToWhatsApp: false,
       rawTelemetry: {
         timestamp: '2026-09-02T12:28:44.000Z',
         anomaly: 'UNRECOGNIZED_USER_AGENT',
+        eventType: 'DEVICE_DEVIATION',
         userAgent: 'python-requests/2.31.0-spoofed',
         baselineDevice: 'macOS Chrome 122'
       }
     }
   ]);
+
+  // Connect to Backend REST API & Real-time WebSockets on Mount
+  useEffect(() => {
+    let isMounted = true;
+
+    // 1. Fetch live alerts from backend
+    const fetchBackendAlerts = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/alerts`);
+        if (res.ok) {
+          const json = await res.json();
+          if (isMounted && json.success && Array.isArray(json.data) && json.data.length > 0) {
+            setAlerts(json.data);
+            const activeAlerts = json.data.filter(a => !a.isResolved && a.status !== 'RESOLVED');
+            setAnomaliesFlagged(activeAlerts.length);
+            const hasCritical = activeAlerts.some(a => a.severity === 'CRITICAL' || a.riskLevel === 'CRITICAL');
+            setThreatLevel(hasCritical ? 'CRITICAL' : activeAlerts.length > 0 ? 'HIGH' : 'LOW');
+          }
+        }
+      } catch (err) {
+        console.warn('[Dashboard] Alerts fetch notice:', err.message);
+      }
+    };
+
+    fetchBackendAlerts();
+
+    // 2. Real-time Socket.io listener for new alerts and status updates
+    try {
+      const socket = getSocket();
+      if (socket) {
+        const handleNewAlert = (newAlert) => {
+          if (!isMounted) return;
+          setAlerts(prev => {
+            const exists = prev.some(a => a.id === newAlert.id || a._id === newAlert._id);
+            if (exists) return prev;
+            return [newAlert, ...prev];
+          });
+          setAnomaliesFlagged(prev => prev + 1);
+          setTotalEvents(prev => prev + (newAlert.rawTelemetry?.attempts || 12));
+          if (newAlert.severity === 'CRITICAL' || newAlert.riskLevel === 'CRITICAL') {
+            setThreatLevel('CRITICAL');
+          }
+        };
+
+        const handleUpdatedAlert = (updated) => {
+          if (!isMounted) return;
+          setAlerts(prev =>
+            prev.map(item =>
+              (item.id === updated.id || item._id === updated._id || item.id === updated._id)
+                ? { ...item, ...updated, isResolved: updated.status === 'RESOLVED' }
+                : item
+            )
+          );
+        };
+
+        socket.on('alert:new', handleNewAlert);
+        socket.on('alert:updated', handleUpdatedAlert);
+
+        return () => {
+          isMounted = false;
+          socket.off('alert:new', handleNewAlert);
+          socket.off('alert:updated', handleUpdatedAlert);
+        };
+      }
+    } catch (sockErr) {
+      console.warn('[Dashboard] Socket notice:', sockErr.message);
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const showToast = (title, message, isWhatsApp = true, type = 'INFO') => {
     const newNotif = {
@@ -191,70 +284,130 @@ export default function Dashboard() {
     localStorage.setItem('neurolock_whatsapp_number', newNumber);
   };
 
-  // Handle attack injection from the Simulator
-  const handleTriggerAttack = (scenario, dispatchToWA = true) => {
+  // Handle attack injection from the Simulator by posting telemetry to backend detection pipeline
+  const handleTriggerAttack = async (scenario, dispatchToWA = true) => {
     setTotalEvents(prev => prev + (scenario.rawPayload.attempts || 12));
     setAnomaliesFlagged(prev => prev + 1);
     setThreatLevel('CRITICAL');
     setSpikeTriggerCount(prev => prev + 1);
 
-    let plainEnglishText = '';
-    let recAction = '';
-    let risk = 'HIGH';
+    try {
+      const response = await fetch(`${API_BASE_URL}/telemetry`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          eventType: scenario.rawPayload.eventType,
+          targetUser: scenario.rawPayload.targetUser,
+          attempts: scenario.rawPayload.attempts,
+          timeDeltaSeconds: scenario.rawPayload.timeDeltaSeconds,
+          ipAddress: scenario.rawPayload.ipAddress,
+          deviceId: scenario.rawPayload.userAgent || scenario.rawPayload.deviceId,
+          calculatedSpeedKmH: scenario.rawPayload.calculatedSpeedKmH,
+          scenarioId: scenario.id,
+          scenarioTitle: scenario.title,
+          rawPayload: scenario.rawPayload
+        })
+      });
 
-    if (scenario.id === 'BRUTE_FORCE') {
-      risk = 'CRITICAL';
-      plainEnglishText = `⚠️ Real-Time Alert: Someone at IP ${scenario.rawPayload.ipAddress} attempted ${scenario.rawPayload.attempts} rapid password guesses in ${scenario.rawPayload.timeDeltaSeconds} seconds against ${scenario.rawPayload.targetUser}. We recommend locking this account immediately.`;
-      recAction = 'Lock Account & Force Password Reset';
-    } else if (scenario.id === 'IMPOSSIBLE_TRAVEL') {
-      risk = 'CRITICAL';
-      plainEnglishText = `⚠️ Impossible Travel Detected: Login logged for ${scenario.rawPayload.targetUser} in ${scenario.rawPayload.origin}, then another attempt in ${scenario.rawPayload.destination} just ${scenario.rawPayload.timeDeltaMinutes} minutes later (speed: ${scenario.rawPayload.calculatedSpeedKmH} km/h).`;
-      recAction = 'Enforce Biometric Step-Up Auth';
-    } else {
-      risk = 'MEDIUM';
-      plainEnglishText = `⚠️ Unusual Device Signature: An unverified headless agent attempted to authenticate as ${scenario.rawPayload.targetUser} at ${scenario.rawPayload.timeOfDay}.`;
-      recAction = 'Quarantine IP & Invalidate Session';
-    }
+      const data = await response.json();
+      if (data.success && data.alert) {
+        setAlerts(prev => {
+          const exists = prev.some(a => a.id === data.alert.id || a._id === data.alert._id);
+          if (exists) return prev;
+          return [data.alert, ...prev];
+        });
 
-    const newAlert = {
-      id: `ALT-${Math.floor(1000 + Math.random() * 9000)}`,
-      riskLevel: risk,
-      userEmail: scenario.rawPayload.targetUser,
-      plainEnglishSummary: plainEnglishText,
-      recommendedAction: recAction,
-      timeAgo: 'Just now',
-      isResolved: false,
-      dispatchedToWhatsApp: dispatchToWA,
-      rawTelemetry: scenario.rawPayload
-    };
+        showToast(
+          `${data.alert.severity || data.alert.riskLevel} Threat Flagged`,
+          data.alert.title || data.alert.explanation || data.alert.plainEnglishSummary,
+          false,
+          'THREAT'
+        );
+      }
+    } catch (err) {
+      console.warn('[Dashboard] Telemetry POST fallback:', err.message);
 
-    setAlerts(prev => [newAlert, ...prev]);
-
-    if (dispatchToWA) {
-      showToast(
-        'WhatsApp Zero-Jargon Alert Dispatched',
-        `Transmitted plain-English security summary to ${whatsAppNumber}`,
-        true
-      );
+      let risk = scenario.id === 'BRUTE_FORCE' ? 'CRITICAL' : 'HIGH';
+      const fallbackAlert = {
+        id: `ALT-${Math.floor(1000 + Math.random() * 9000)}`,
+        riskLevel: risk,
+        severity: risk,
+        userEmail: scenario.rawPayload.targetUser,
+        username: scenario.rawPayload.targetUser,
+        title: `${risk} Risk: ${scenario.title}`,
+        plainEnglishSummary: `Injected anomaly simulation for ${scenario.title} against ${scenario.rawPayload.targetUser}.`,
+        explanation: `Injected anomaly simulation for ${scenario.title} against ${scenario.rawPayload.targetUser}.`,
+        recommendedAction: 'Verify credentials and enforce immediate session invalidation',
+        timeAgo: 'Just now',
+        isResolved: false,
+        status: 'ACTIVE',
+        dispatchedToWhatsApp: false,
+        rawTelemetry: scenario.rawPayload
+      };
+      setAlerts(prev => [fallbackAlert, ...prev]);
     }
   };
 
-  const handleResolveAlert = (alertId, actionType) => {
+  // Handle resolving an alert (updates backend and local state)
+  const handleResolveAlert = async (alertId, actionType = 'LOCK_ACCOUNT') => {
+    // 1. Optimistically update local state
     setAlerts(prev =>
       prev.map(item =>
-        item.id === alertId ? { ...item, isResolved: true } : item
+        (item.id === alertId || item._id === alertId)
+          ? { ...item, isResolved: true, status: 'RESOLVED' }
+          : item
       )
     );
+    setAnomaliesFlagged(prev => Math.max(0, prev - 1));
     showToast(
       'Account Remediated',
       `Applied mitigation policy (${actionType}) and isolated compromised credentials.`,
       false
     );
+
+    // 2. Persist to backend
+    try {
+      await fetch(`${API_BASE_URL}/alerts/${alertId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'RESOLVED' })
+      });
+    } catch (err) {
+      console.warn('[Dashboard] Could not sync resolve status with backend:', err.message);
+    }
+  };
+
+  // Handle acknowledging an alert (updates backend and local state)
+  const handleAcknowledgeAlert = async (alertId) => {
+    // 1. Optimistically update local state
+    setAlerts(prev =>
+      prev.map(item =>
+        (item.id === alertId || item._id === alertId)
+          ? { ...item, status: 'ACKNOWLEDGED' }
+          : item
+      )
+    );
+    showToast(
+      'Incident Acknowledged',
+      `Incident ${alertId} reviewed by operator. Under observation.`,
+      false
+    );
+
+    // 2. Persist to backend
+    try {
+      await fetch(`${API_BASE_URL}/alerts/${alertId}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'ACKNOWLEDGED' })
+      });
+    } catch (err) {
+      console.warn('[Dashboard] Could not sync acknowledge status with backend:', err.message);
+    }
   };
 
   const handleManualDispatchFromModal = ({ phoneNumber, threat }) => {
     showToast(
-      'WhatsApp Test Alert Sent',
+      'WhatsApp Test Alert Simulated',
       `Delivered zero-jargon incident breakdown for "${threat.title}" to ${phoneNumber}`,
       true
     );
@@ -262,18 +415,23 @@ export default function Dashboard() {
 
   // Scoped alerts based on Role (Staff vs Owner)
   const roleScopedAlerts = role === 'staff'
-    ? alerts.filter(a => a.userEmail === user?.email || a.id === 'ALT-9041')
+    ? alerts.filter(a => (a.userEmail === user?.email || a.username === user?.email) || a.id === 'ALT-9041')
     : alerts;
 
   // Filter alerts by search query
   const filteredAlerts = roleScopedAlerts.filter(alert => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
+    const userField = (alert.userEmail || alert.username || '').toLowerCase();
+    const idField = (alert.id || alert._id || '').toLowerCase();
+    const summaryField = (alert.plainEnglishSummary || alert.explanation || '').toLowerCase();
+    const ipField = alert.rawTelemetry?.ipAddress || alert.sourceIp || '';
+
     return (
-      alert.userEmail.toLowerCase().includes(q) ||
-      alert.id.toLowerCase().includes(q) ||
-      alert.plainEnglishSummary.toLowerCase().includes(q) ||
-      (alert.rawTelemetry?.ipAddress && alert.rawTelemetry.ipAddress.includes(q))
+      userField.includes(q) ||
+      idField.includes(q) ||
+      summaryField.includes(q) ||
+      ipField.includes(q)
     );
   });
 
@@ -288,7 +446,7 @@ export default function Dashboard() {
         onOpenWhatsApp={() => setIsWhatsAppModalOpen(true)}
         onOpenAuditLogs={() => setIsAuditLogsOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
-        alertCount={filteredAlerts.filter(a => !a.isResolved).length}
+        alertCount={filteredAlerts.filter(a => !a.isResolved && a.status !== 'RESOLVED').length}
       />
 
       {/* 2. Main Body Container with Top Header */}
@@ -306,7 +464,7 @@ export default function Dashboard() {
           notifications={notificationsHistory}
           onClearNotifications={() => setNotificationsHistory([])}
           isLive={true}
-          alertCount={filteredAlerts.filter(a => !a.isResolved).length}
+          alertCount={filteredAlerts.filter(a => !a.isResolved && a.status !== 'RESOLVED').length}
         />
 
         {/* Luxury Glassmorphic Floating Toast Notification */}
@@ -325,13 +483,13 @@ export default function Dashboard() {
               <div>
                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/30 text-xs font-semibold mb-3">
                   <Sparkles className="w-3.5 h-3.5 text-yellow-300" />
-                  <span>NEXHACK 2.0 • WOLFPACK SQUADRON RADAR</span>
+                  <span>MINI PROJECT 2026 • WOLFPACK SQUADRON RADAR</span>
                 </div>
                 <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
                   Real-Time Security Threat & Anomaly Radar
                 </h2>
                 <p className="text-sm text-slate-300 mt-1 max-w-2xl leading-relaxed">
-                  Welcome back, <strong className="text-purple-300 font-bold">{userName}</strong> ({userRole}). Ingesting raw authentication streams, flagging behavioral anomalies, and delivering zero-jargon plain-English explanations directly to WhatsApp.
+                  Welcome back, <strong className="text-purple-300 font-bold">{userName}</strong> ({userRole}). Ingesting authentication streams, detecting behavioral anomalies in milliseconds, and delivering zero-jargon plain-English explanations.
                 </p>
 
                 {role === 'staff' && (
@@ -358,13 +516,13 @@ export default function Dashboard() {
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-[11px] text-slate-400 block font-medium">WhatsApp Dispatch:</span>
+                    <span className="text-[11px] text-slate-400 block font-medium">Notification Channel:</span>
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 group-hover:bg-purple-600 group-hover:text-white transition-colors">
-                      TEST / SETUP ↗
+                      TEST / VIEW ↗
                     </span>
                   </div>
                   <div className="text-xs font-bold text-white flex items-center gap-1.5 mt-0.5">
-                    <span className="text-emerald-400">CONNECTED</span>
+                    <span className="text-emerald-400">READY</span>
                     <span className="text-slate-300">({whatsAppNumber})</span>
                   </div>
                 </div>
@@ -395,7 +553,7 @@ export default function Dashboard() {
               }`}
             >
               <ShieldAlert className="w-4 h-4" />
-              <span>Threat Alerts ({filteredAlerts.filter(a => !a.isResolved).length})</span>
+              <span>Threat Alerts ({filteredAlerts.filter(a => !a.isResolved && a.status !== 'RESOLVED').length})</span>
             </button>
 
             <button
@@ -454,15 +612,15 @@ export default function Dashboard() {
                     </div>
 
                     <div className="p-4 rounded-2xl bg-[#0e0a17] border border-[#231d38]">
-                      <div className="text-xs text-slate-400">LLM Translation Latency</div>
-                      <div className="text-lg font-bold text-white mt-1">0.82s Average</div>
-                      <div className="text-[11px] text-yellow-400 mt-1">Deterministic plain English</div>
+                      <div className="text-xs text-slate-400">Anomaly Pipeline Latency</div>
+                      <div className="text-lg font-bold text-white mt-1">&lt; 15ms Ingestion</div>
+                      <div className="text-[11px] text-yellow-400 mt-1">Deterministic heuristics</div>
                     </div>
 
                     <div className="p-4 rounded-2xl bg-[#0e0a17] border border-[#231d38]">
-                      <div className="text-xs text-slate-400">WhatsApp Dispatch Queue</div>
-                      <div className="text-lg font-bold text-emerald-400 mt-1">Instant Direct</div>
-                      <div className="text-[11px] text-slate-400 mt-1">Twilio Sandbox Active</div>
+                      <div className="text-xs text-slate-400">Storage Subsystem</div>
+                      <div className="text-lg font-bold text-emerald-400 mt-1">Active Dual Mode</div>
+                      <div className="text-[11px] text-slate-400 mt-1">MongoDB + Memory Fallback</div>
                     </div>
                   </div>
                 </div>
@@ -476,6 +634,7 @@ export default function Dashboard() {
                 <LiveAlertFeed
                   alerts={filteredAlerts}
                   onResolveAlert={handleResolveAlert}
+                  onAcknowledgeAlert={handleAcknowledgeAlert}
                 />
 
                 {/* Standout HERO CARD in Bottom-Right */}
@@ -487,19 +646,19 @@ export default function Dashboard() {
                     <div className="flex items-center justify-between">
                       <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-white text-xs font-bold border border-white/30 shadow-sm">
                         <Sparkles className="w-3.5 h-3.5 text-yellow-200" />
-                        <span>{t('heroBadge', 'Zero-Jargon AI Engine')}</span>
+                        <span>{t('heroBadge', 'Zero-Jargon Threat Engine')}</span>
                       </div>
                       <span className="text-[11px] text-white/80 font-medium">
-                        {t('statusDispatched', 'Mobile Dispatch Ready')}
+                        Instant Mitigation Ready
                       </span>
                     </div>
 
                     <div>
                       <h3 className="text-xl font-extrabold text-white tracking-tight leading-snug">
-                        {t('heroTitle', 'Instant WhatsApp Security Alerts')}
+                        Zero-Jargon Cybersecurity Intelligence
                       </h3>
                       <p className="text-xs text-white/90 mt-1.5 leading-relaxed font-normal">
-                        {t('heroSub', 'Translates complex cryptographic anomalies into simple, human-actionable alerts for non-technical leadership in <1 second.')}
+                        Converts cryptic network bursts and raw authorization payloads into clear, human-actionable plain-English incident alerts for stakeholders.
                       </p>
                     </div>
 
@@ -509,28 +668,28 @@ export default function Dashboard() {
                         <span className="font-semibold">{whatsAppNumber}</span>
                       </div>
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-400 text-slate-950">
-                        LIVE
+                        MONITORED
                       </span>
                     </div>
 
                     <div className="flex items-center gap-2.5 pt-1">
-                      <button
-                        onClick={() => setIsWhatsAppModalOpen(true)}
-                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white text-purple-950 hover:bg-slate-100 font-bold text-xs shadow-lg transition-all active:scale-95"
-                      >
-                        <Send className="w-3.5 h-3.5 text-purple-700" />
-                        <span>{t('heroBtnTest', 'Test WhatsApp Alert')}</span>
-                      </button>
-
                       <RoleGuard allowedRoles={['owner']}>
                         <button
                           onClick={() => setIsSimulatorOpen(true)}
-                          className="flex items-center justify-center p-2.5 rounded-xl bg-white/20 hover:bg-white/30 text-white border border-white/30 backdrop-blur-md transition-all active:scale-95"
-                          title={t('heroBtnSim', 'Launch Attack Simulator')}
+                          className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white text-purple-950 hover:bg-slate-100 font-bold text-xs shadow-lg transition-all active:scale-95"
                         >
-                          <Zap className="w-4 h-4 text-yellow-200" />
+                          <Zap className="w-3.5 h-3.5 text-purple-700" />
+                          <span>Launch Attack Simulator</span>
                         </button>
                       </RoleGuard>
+
+                      <button
+                        onClick={() => setIsWhatsAppModalOpen(true)}
+                        className="flex items-center justify-center p-2.5 rounded-xl bg-white/20 hover:bg-white/30 text-white border border-white/30 backdrop-blur-md transition-all active:scale-95"
+                        title="View Notification Dispatch Pipeline"
+                      >
+                        <Send className="w-4 h-4 text-yellow-200" />
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -550,7 +709,7 @@ export default function Dashboard() {
                     </div>
                     <div>
                       <h3 className="text-lg font-bold text-white">Active Threat Incidents & Mitigation Center</h3>
-                      <p className="text-xs text-slate-400">Deep-dive incident analysis translated by LLM with 1-click credential revocation</p>
+                      <p className="text-xs text-slate-400">Deep-dive incident analysis with instant 1-click credential revocation and acknowledgment</p>
                     </div>
                   </div>
                   <RoleGuard allowedRoles={['owner']}>
@@ -567,6 +726,7 @@ export default function Dashboard() {
                 <LiveAlertFeed
                   alerts={filteredAlerts}
                   onResolveAlert={handleResolveAlert}
+                  onAcknowledgeAlert={handleAcknowledgeAlert}
                 />
               </div>
             </div>
@@ -586,7 +746,7 @@ export default function Dashboard() {
                     </div>
                     <h3 className="text-base font-bold text-white">Sliding-Window Heuristic Engine Metrics</h3>
                   </div>
-                  <span className="text-xs text-purple-400 font-mono">Haversine Distance: ON</span>
+                  <span className="text-xs text-purple-400 font-mono">Telemetry Pipeline: ACTIVE</span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 text-xs">
@@ -602,13 +762,13 @@ export default function Dashboard() {
                   </div>
                   <div className="p-4 rounded-2xl bg-[#0e0a17] border border-[#231d38]">
                     <div className="text-slate-400">Anomaly Trigger Threshold</div>
-                    <div className="text-xl font-bold text-rose-400 mt-1">&gt; 10 Fails / 10s</div>
-                    <div className="text-slate-400 mt-1">Sliding burst rule</div>
+                    <div className="text-xl font-bold text-rose-400 mt-1">&gt; 4 Fails / 60s</div>
+                    <div className="text-slate-400 mt-1">Burst heuristic</div>
                   </div>
                   <div className="p-4 rounded-2xl bg-[#0e0a17] border border-[#231d38]">
-                    <div className="text-slate-400">Geo Travel Velocity Limit</div>
-                    <div className="text-xl font-bold text-purple-300 mt-1">900 km/h</div>
-                    <div className="text-slate-400 mt-1">Aviation physics baseline</div>
+                    <div className="text-slate-400">Storage State</div>
+                    <div className="text-xl font-bold text-purple-300 mt-1">In-Memory Active</div>
+                    <div className="text-slate-400 mt-1">Zero-credential local mode</div>
                   </div>
                 </div>
               </div>
@@ -621,16 +781,16 @@ export default function Dashboard() {
         <footer className="mt-auto border-t border-[#1f1a33]/60 bg-[#0d0a14] py-6 px-4 sm:px-8 text-center text-xs text-slate-400">
           <div className="max-w-[1600px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
             <span>
-              NEUROLOCK © 2026 • Crafted by <strong className="text-purple-400">WolfPack Squadron</strong> for NexHack 2.0
+              NEUROLOCK © 2026 • Crafted by <strong className="text-purple-400">WolfPack Squadron</strong> for Mini Project 2026
             </span>
             <div className="flex items-center gap-3 text-slate-500 text-[11px]">
               <span className="text-slate-300">React + Tailwind CSS</span>
               <span>•</span>
-              <span className="text-slate-300">FastAPI / Express</span>
+              <span className="text-slate-300">Express + Socket.io</span>
               <span>•</span>
-              <span className="text-slate-300">LLM Synthesis</span>
+              <span className="text-slate-300">Zero-Jargon Heuristic Engine</span>
               <span>•</span>
-              <span className="text-slate-300">WhatsApp Direct API</span>
+              <span className="text-slate-300">MSME Threat Radar</span>
             </div>
           </div>
         </footer>

@@ -13,25 +13,26 @@ import {
   Smartphone,
   Flame,
   Globe,
-  User
+  User,
+  Eye
 } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 
-export default function LiveAlertFeed({ alerts = [], onResolveAlert }) {
+export default function LiveAlertFeed({ alerts = [], onResolveAlert, onAcknowledgeAlert }) {
   const { t } = useLanguage();
   const [filter, setFilter] = useState('ALL');
   const [expandedId, setExpandedId] = useState(null);
 
   const filteredAlerts = alerts.filter(alert => {
     if (filter === 'ALL') return true;
-    return alert.riskLevel === filter;
+    return alert.riskLevel === filter || alert.severity === filter;
   });
 
   const getThreatIcon = (alert) => {
-    if (alert.rawTelemetry?.anomaly === 'AUTH_BURST_ATTACK' || alert.rawTelemetry?.eventType === 'AUTH_BURST_FAILURE') {
+    if (alert.rawTelemetry?.anomaly === 'AUTH_BURST_ATTACK' || alert.rawTelemetry?.eventType === 'AUTH_BURST_FAILURE' || alert.alertType === 'AUTH_BURST_ATTACK') {
       return <Flame className="w-4 h-4 text-rose-400" />;
     }
-    if (alert.rawTelemetry?.anomaly === 'IMPOSSIBLE_TRAVEL_VELOCITY' || alert.rawTelemetry?.eventType === 'GEO_IMPOSSIBLE_TRAVEL') {
+    if (alert.rawTelemetry?.anomaly === 'IMPOSSIBLE_TRAVEL_VELOCITY' || alert.rawTelemetry?.eventType === 'GEO_IMPOSSIBLE_TRAVEL' || alert.alertType === 'GEO_IMPOSSIBLE_TRAVEL') {
       return <Globe className="w-4 h-4 text-purple-400" />;
     }
     return <ShieldAlert className="w-4 h-4 text-yellow-400" />;
@@ -51,14 +52,21 @@ export default function LiveAlertFeed({ alerts = [], onResolveAlert }) {
   };
 
   const getRiskBadge = (alert) => {
-    if (alert.isResolved) {
+    if (alert.isResolved || alert.status === 'RESOLVED') {
       return (
         <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
           <CheckCircle2 className="w-3 h-3" /> {t('filterResolved', 'Resolved')}
         </span>
       );
     }
-    switch (alert.riskLevel) {
+    if (alert.status === 'ACKNOWLEDGED') {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-500/20 text-blue-300 border border-blue-500/40">
+          <CheckCircle2 className="w-3 h-3" /> Acknowledged
+        </span>
+      );
+    }
+    switch (alert.riskLevel || alert.severity) {
       case 'CRITICAL':
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse">
@@ -80,7 +88,7 @@ export default function LiveAlertFeed({ alerts = [], onResolveAlert }) {
       default:
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-800 text-slate-300 border border-slate-700">
-            {alert.riskLevel}
+            {alert.riskLevel || alert.severity}
           </span>
         );
     }
@@ -139,12 +147,17 @@ export default function LiveAlertFeed({ alerts = [], onResolveAlert }) {
         ) : (
           filteredAlerts.map(alert => {
             const isExpanded = expandedId === alert.id;
+            const isResolvedState = Boolean(alert.isResolved || alert.status === 'RESOLVED');
+            const isAcknowledgedState = alert.status === 'ACKNOWLEDGED';
+
             return (
               <div
-                key={alert.id}
+                key={alert.id || alert._id}
                 className={`relative rounded-2xl transition-all duration-200 p-4 sm:p-5 ${
-                  alert.isResolved
+                  isResolvedState
                     ? 'bg-[#100d1a]/50 opacity-60'
+                    : isAcknowledgedState
+                    ? 'bg-[#121124] border border-blue-500/20'
                     : 'bg-[#120e1f] hover:bg-[#181329] border border-purple-500/10 hover:border-purple-500/30'
                 }`}
               >
@@ -155,7 +168,7 @@ export default function LiveAlertFeed({ alerts = [], onResolveAlert }) {
                   <div className="flex items-start sm:items-center gap-3.5 flex-1 min-w-0">
                     
                     {/* Circular Avatar Icon */}
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 border ${getThreatAvatarBg(alert.riskLevel)}`}>
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 border ${getThreatAvatarBg(alert.riskLevel || alert.severity)}`}>
                       {getThreatIcon(alert)}
                     </div>
 
@@ -163,11 +176,16 @@ export default function LiveAlertFeed({ alerts = [], onResolveAlert }) {
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="text-sm font-bold text-white truncate">
-                          {alert.userEmail}
+                          {alert.userEmail || alert.username}
                         </span>
                         <span className="text-[11px] font-mono text-slate-400 bg-[#1a152b] px-2 py-0.5 rounded-md">
-                          {alert.id}
+                          {alert.id || alert._id}
                         </span>
+                        {alert.title && (
+                          <span className="text-[11px] font-semibold text-purple-300">
+                            • {alert.title}
+                          </span>
+                        )}
                         {alert.dispatchedToWhatsApp && (
                           <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
                             <Smartphone className="w-3 h-3" />
@@ -177,7 +195,7 @@ export default function LiveAlertFeed({ alerts = [], onResolveAlert }) {
                       </div>
                       
                       <p className="text-xs text-slate-300 mt-1 line-clamp-2 leading-relaxed">
-                        {alert.plainEnglishSummary}
+                        {alert.plainEnglishSummary || alert.explanation}
                       </p>
                     </div>
                   </div>
@@ -210,14 +228,27 @@ export default function LiveAlertFeed({ alerts = [], onResolveAlert }) {
                       {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                     </button>
 
-                    {!alert.isResolved ? (
-                      <button
-                        onClick={() => onResolveAlert(alert.id, 'LOCK_ACCOUNT')}
-                        className="flex items-center gap-1.5 text-xs font-bold px-3.5 py-1 rounded-xl bg-purple-600 hover:bg-purple-500 text-white shadow-[0_0_12px_rgba(139,92,246,0.35)] transition-all active:scale-95"
-                      >
-                        <Lock className="w-3.5 h-3.5 text-yellow-300" />
-                        <span>{t('takeRemediation', 'Lock Account')}</span>
-                      </button>
+                    {!isResolvedState ? (
+                      <>
+                        {!isAcknowledgedState && onAcknowledgeAlert && (
+                          <button
+                            onClick={() => onAcknowledgeAlert(alert.id || alert._id)}
+                            className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-xl bg-[#1c182d] hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 transition-all active:scale-95"
+                            title="Acknowledge alert"
+                          >
+                            <Eye className="w-3 h-3 text-blue-400" />
+                            <span>Acknowledge</span>
+                          </button>
+                        )}
+
+                        <button
+                          onClick={() => onResolveAlert(alert.id || alert._id, 'LOCK_ACCOUNT')}
+                          className="flex items-center gap-1.5 text-xs font-bold px-3.5 py-1 rounded-xl bg-purple-600 hover:bg-purple-500 text-white shadow-[0_0_12px_rgba(139,92,246,0.35)] transition-all active:scale-95"
+                        >
+                          <Lock className="w-3.5 h-3.5 text-yellow-300" />
+                          <span>{t('takeRemediation', 'Lock Account')}</span>
+                        </button>
+                      </>
                     ) : (
                       <span className="flex items-center gap-1 text-xs text-emerald-400 font-medium">
                         <CheckCircle2 className="w-3.5 h-3.5" /> {t('actionCompleted', 'Remediated')}
@@ -233,7 +264,7 @@ export default function LiveAlertFeed({ alerts = [], onResolveAlert }) {
                       <span>// RAW TELEMETRY JSON (PRE-LLM SYNTHESIS):</span>
                     </div>
                     <pre className="text-[11px] text-slate-300 leading-relaxed overflow-x-auto">
-                      {JSON.stringify(alert.rawTelemetry, null, 2)}
+                      {JSON.stringify(alert.rawTelemetry || alert.eventData, null, 2)}
                     </pre>
                   </div>
                 )}
@@ -247,5 +278,3 @@ export default function LiveAlertFeed({ alerts = [], onResolveAlert }) {
     </div>
   );
 }
-
-

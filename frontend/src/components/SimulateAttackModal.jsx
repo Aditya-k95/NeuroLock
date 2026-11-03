@@ -65,23 +65,25 @@ export default function SimulateAttackModal({
     }
   ];
 
-  const handleRunSimulation = () => {
+  const handleRunSimulation = async () => {
     setIsSimulating(true);
     const scenario = scenarios.find(s => s.id === selectedScenario);
     
-    setTimeout(() => {
-      onTriggerAttack(scenario, dispatchToWhatsApp);
+    try {
+      if (onTriggerAttack) {
+        await onTriggerAttack(scenario, dispatchToWhatsApp);
+      }
+      setSuccessMessage(`Injected "${scenario.title}" to Threat Engine! (Simulation mode)`);
+    } catch (err) {
+      console.warn('[SimulateAttackModal] Simulation notice:', err.message);
+      setSuccessMessage(`Injected "${scenario.title}" (Local mode)`);
+    } finally {
       setIsSimulating(false);
-      setSuccessMessage(
-        dispatchToWhatsApp
-          ? `Injected "${scenario.title}" and dispatched WhatsApp alert to ${whatsAppNumber}!`
-          : `Injected "${scenario.title}" vector to Threat Engine!`
-      );
       setTimeout(() => {
         setSuccessMessage('');
         onClose();
-      }, 1200);
-    }, 800);
+      }, 1000);
+    }
   };
 
   return (
@@ -99,7 +101,7 @@ export default function SimulateAttackModal({
                 Attack Vector Simulator (Judge Demo)
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                Trigger synthetic anomaly telemetry to test real-time LLM synthesis & WhatsApp dispatch
+                Trigger synthetic anomaly telemetry to evaluate deterministic pipeline & risk scoring
               </p>
             </div>
           </div>
@@ -151,7 +153,7 @@ export default function SimulateAttackModal({
             })}
           </div>
 
-          {/* WhatsApp Auto-Dispatch Option */}
+          {/* Simulated WhatsApp Notification Indicator */}
           <div className="flex items-center justify-between p-3.5 rounded-2xl bg-[#0e0a17] border border-[#231d38]">
             <label className="flex items-center gap-2.5 cursor-pointer text-xs text-slate-200 select-none">
               <input
@@ -162,7 +164,7 @@ export default function SimulateAttackModal({
               />
               <span className="flex items-center gap-1.5 font-medium">
                 <Smartphone className="w-4 h-4 text-emerald-400" />
-                <span>Simultaneously transmit zero-jargon alert to WhatsApp</span>
+                <span>Simulate instant zero-jargon WhatsApp alert dispatch</span>
               </span>
             </label>
             <span className="text-xs font-bold text-purple-300 bg-[#171226] px-2.5 py-1 rounded-full border border-purple-500/20">
@@ -193,7 +195,7 @@ export default function SimulateAttackModal({
             className="flex items-center gap-2 px-5 py-2.5 text-xs font-bold rounded-xl bg-gradient-to-r from-purple-600 to-violet-500 text-white hover:from-purple-500 hover:to-violet-400 shadow-[0_0_15px_rgba(139,92,246,0.4)] transition-all disabled:opacity-50"
           >
             <Zap className="w-3.5 h-3.5 text-yellow-300" />
-            <span>{isSimulating ? 'Injecting Telemetry...' : 'Fire Anomaly Vector'}</span>
+            <span>{isSimulating ? 'Evaluating Ingestion...' : 'Fire Anomaly Vector'}</span>
           </button>
         </div>
 
@@ -201,4 +203,3 @@ export default function SimulateAttackModal({
     </div>
   );
 }
-

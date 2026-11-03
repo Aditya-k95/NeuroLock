@@ -93,14 +93,9 @@ export default function Navbar({
               <h1 className="text-lg sm:text-xl font-extrabold tracking-tight text-white flex items-center">
                 NEURO<span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-violet-500">LOCK</span>
               </h1>
-              <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/30 hidden sm:inline-block">
-                {t('aiRadar', 'AI SaaS Radar')}
-              </span>
             </div>
             <p className="text-xs text-slate-400 flex items-center gap-1.5">
-              <span className="font-bold text-purple-400">{t('teamName', 'WolfPack Squadron')}</span>
-              <span className="text-slate-600">•</span>
-              <span className="text-slate-400 hidden sm:inline">{t('hackName', 'NexHack 2.0')}</span>
+              <span className="font-medium text-purple-400">{t('headerSubtitle', 'AI-Powered Cybersecurity Platform')}</span>
             </p>
           </div>
         </div>
