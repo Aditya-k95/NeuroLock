@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { X, Zap, ShieldAlert, Globe, Flame, Terminal, CheckCircle2, Smartphone, Sparkles } from 'lucide-react';
 
 export default function SimulateAttackModal({
@@ -11,6 +11,15 @@ export default function SimulateAttackModal({
   const [isSimulating, setIsSimulating] = useState(false);
   const [dispatchToWhatsApp, setDispatchToWhatsApp] = useState(true);
   const [successMessage, setSuccessMessage] = useState('');
+  
+  // Synchronous submission lock to prevent rapid double-clicks and concurrent submissions
+  const isSubmittingRef = useRef(false);
+
+  useEffect(() => {
+    if (!isOpen) {
+      isSubmittingRef.current = false;
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -66,6 +75,11 @@ export default function SimulateAttackModal({
   ];
 
   const handleRunSimulation = async () => {
+    // Immediate synchronous lock check
+    if (isSubmittingRef.current || isSimulating) {
+      return;
+    }
+    isSubmittingRef.current = true;
     setIsSimulating(true);
     const scenario = scenarios.find(s => s.id === selectedScenario);
     
@@ -80,6 +94,7 @@ export default function SimulateAttackModal({
     } finally {
       setIsSimulating(false);
       setTimeout(() => {
+        isSubmittingRef.current = false;
         setSuccessMessage('');
         onClose();
       }, 1000);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Sidebar from '../components/Sidebar';
 import Navbar from '../components/Navbar';
 import MetricsGrid from '../components/MetricsGrid';
@@ -94,11 +94,14 @@ export default function Dashboard() {
   }, []);
 
   const [totalEvents, setTotalEvents] = useState(18492);
-  const [anomaliesFlagged, setAnomaliesFlagged] = useState(3);
+  const [anomaliesFlagged, setAnomaliesFlagged] = useState(1);
   const [threatLevel, setThreatLevel] = useState('HIGH');
   const [spikeTriggerCount, setSpikeTriggerCount] = useState(0);
 
-  // Initial State: Fallback Demo Alerts
+  // Set of ingested alert IDs to prevent duplicate alert additions across Socket.IO and REST
+  const seenAlertIdsRef = useRef(new Set(['ALT-9041', 'ALT-9040', 'ALT-9038']));
+
+  // Initial State: Fallback Demo Alerts (ALT-9041 preserved as historical resolved audit incident)
   const [alerts, setAlerts] = useState([
     {
       id: 'ALT-9041',
@@ -106,13 +109,13 @@ export default function Dashboard() {
       severity: 'CRITICAL',
       userEmail: 'sarah.jenkins@fintech.in',
       username: 'sarah.jenkins@fintech.in',
-      title: 'CRITICAL Risk: Credential Stuffing Burst',
-      plainEnglishSummary: 'Someone located in Frankfurt, Germany attempted to enter your password 14 times within 12 seconds. Because this fits an automated credential-guessing attack pattern, we flagged this incident for immediate isolation.',
-      explanation: 'Someone located in Frankfurt, Germany attempted to enter your password 14 times within 12 seconds. Because this fits an automated credential-guessing attack pattern, we flagged this incident for immediate isolation.',
+      title: 'CRITICAL Risk: Credential Stuffing Burst (Mitigated)',
+      plainEnglishSummary: 'Someone located in Frankfurt, Germany attempted to enter password 14 times within 12 seconds. Automated credential-guessing pattern isolated and credentials invalidated.',
+      explanation: 'Someone located in Frankfurt, Germany attempted to enter password 14 times within 12 seconds. Automated credential-guessing pattern isolated and credentials invalidated.',
       recommendedAction: 'Lock account and invalidate active sessions',
-      timeAgo: '1 min ago',
-      isResolved: false,
-      status: 'ACTIVE',
+      timeAgo: '1 hr ago',
+      isResolved: true,
+      status: 'RESOLVED',
       dispatchedToWhatsApp: false,
       rawTelemetry: {
         timestamp: '2026-09-02T12:51:22.000Z',
@@ -185,6 +188,10 @@ export default function Dashboard() {
         if (res.ok) {
           const json = await res.json();
           if (isMounted && json.success && Array.isArray(json.data) && json.data.length > 0) {
+            json.data.forEach(a => {
+              if (a.id) seenAlertIdsRef.current.add(String(a.id));
+              if (a._id) seenAlertIdsRef.current.add(String(a._id));
+            });
             setAlerts(json.data);
             const activeAlerts = json.data.filter(a => !a.isResolved && a.status !== 'RESOLVED');
             setAnomaliesFlagged(activeAlerts.length);
@@ -199,17 +206,35 @@ export default function Dashboard() {
 
     fetchBackendAlerts();
 
-    // 2. Real-time Socket.io listener for new alerts and status updates
+    // 2. Real-time Socket.io listener as Single Source of Truth for live alerts
     try {
       const socket = getSocket();
       if (socket) {
         const handleNewAlert = (newAlert) => {
-          if (!isMounted) return;
+          if (!isMounted || !newAlert) return;
+          const alertId = String(newAlert.id || newAlert._id || '');
+
+          // Deduplicate by ID across Socket.IO and REST
+          if (alertId && seenAlertIdsRef.current.has(alertId)) {
+            return;
+          }
+          if (alertId) {
+            seenAlertIdsRef.current.add(alertId);
+            if (newAlert.id) seenAlertIdsRef.current.add(String(newAlert.id));
+            if (newAlert._id) seenAlertIdsRef.current.add(String(newAlert._id));
+          }
+
           setAlerts(prev => {
-            const exists = prev.some(a => a.id === newAlert.id || a._id === newAlert._id);
+            const exists = prev.some(a =>
+              (alertId && (String(a.id) === alertId || String(a._id) === alertId)) ||
+              (newAlert.id && (a.id === newAlert.id || a._id === newAlert.id)) ||
+              (newAlert._id && (a.id === newAlert._id || a._id === newAlert._id))
+            );
             if (exists) return prev;
             return [newAlert, ...prev];
           });
+
+          // Metrics updated exactly once per newly ingested live alert
           setAnomaliesFlagged(prev => prev + 1);
           setTotalEvents(prev => prev + (newAlert.rawTelemetry?.attempts || 12));
           if (newAlert.severity === 'CRITICAL' || newAlert.riskLevel === 'CRITICAL') {
@@ -286,9 +311,7 @@ export default function Dashboard() {
 
   // Handle attack injection from the Simulator by posting telemetry to backend detection pipeline
   const handleTriggerAttack = async (scenario, dispatchToWA = true) => {
-    setTotalEvents(prev => prev + (scenario.rawPayload.attempts || 12));
-    setAnomaliesFlagged(prev => prev + 1);
-    setThreatLevel('CRITICAL');
+    // Pulse animation trigger for the trend chart
     setSpikeTriggerCount(prev => prev + 1);
 
     try {
@@ -310,13 +333,44 @@ export default function Dashboard() {
       });
 
       const data = await response.json();
-      if (data.success && data.alert) {
-        setAlerts(prev => {
-          const exists = prev.some(a => a.id === data.alert.id || a._id === data.alert._id);
-          if (exists) return prev;
-          return [data.alert, ...prev];
-        });
 
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || `Telemetry evaluation failed with status ${response.status}`);
+      }
+
+      // Socket.IO is the single source of truth for inserting newly generated alerts.
+      // We only insert from HTTP response if Socket.io client is disconnected/unavailable.
+      const socket = getSocket();
+      const isSocketConnected = Boolean(socket && socket.connected);
+
+      if (!isSocketConnected && data.alert) {
+        const alertId = String(data.alert.id || data.alert._id || '');
+        if (!seenAlertIdsRef.current.has(alertId)) {
+          if (alertId) {
+            seenAlertIdsRef.current.add(alertId);
+            if (data.alert.id) seenAlertIdsRef.current.add(String(data.alert.id));
+            if (data.alert._id) seenAlertIdsRef.current.add(String(data.alert._id));
+          }
+
+          setAlerts(prev => {
+            const exists = prev.some(a =>
+              (alertId && (String(a.id) === alertId || String(a._id) === alertId)) ||
+              (data.alert.id && (a.id === data.alert.id || a._id === data.alert.id))
+            );
+            if (exists) return prev;
+            return [data.alert, ...prev];
+          });
+
+          // Metrics updated exactly once per newly ingested live alert
+          setAnomaliesFlagged(prev => prev + 1);
+          setTotalEvents(prev => prev + (data.alert.rawTelemetry?.attempts || 12));
+          if (data.alert.severity === 'CRITICAL' || data.alert.riskLevel === 'CRITICAL') {
+            setThreatLevel('CRITICAL');
+          }
+        }
+      }
+
+      if (data.alert) {
         showToast(
           `${data.alert.severity || data.alert.riskLevel} Threat Flagged`,
           data.alert.title || data.alert.explanation || data.alert.plainEnglishSummary,
@@ -344,7 +398,15 @@ export default function Dashboard() {
         dispatchedToWhatsApp: false,
         rawTelemetry: scenario.rawPayload
       };
-      setAlerts(prev => [fallbackAlert, ...prev]);
+
+      const fallbackId = String(fallbackAlert.id);
+      if (!seenAlertIdsRef.current.has(fallbackId)) {
+        seenAlertIdsRef.current.add(fallbackId);
+        setAlerts(prev => [fallbackAlert, ...prev]);
+        setAnomaliesFlagged(prev => prev + 1);
+        setTotalEvents(prev => prev + (scenario.rawPayload.attempts || 12));
+        setThreatLevel(risk);
+      }
     }
   };
 
